@@ -1,0 +1,83 @@
+@import "tailwindcss";
+@import "ag-grid-community/styles/ag-grid.css";
+@import "ag-grid-community/styles/ag-theme-alpine.css";
+
+:root {
+  --apple-bg: #000000;
+  --apple-canvas: #0b0c0e;
+  --apple-card: rgba(22, 23, 27, 0.72);
+  --apple-card-border: rgba(255, 255, 255, 0.08);
+  --apple-card-border-top: rgba(255, 255, 255, 0.14);
+  --apple-pill: rgba(255, 255, 255, 0.08);
+  --apple-pill-hover: rgba(255, 255, 255, 0.14);
+  --apple-text-primary: #f5f5f7;
+  --apple-text-secondary: #86868b;
+  --apple-blue: #0071e3;
+  --apple-blue-hover: #0077ed;
+  --apple-green: #30d158;
+  --apple-orange: #ff9f0a;
+  --apple-red: #ff453a;
+}
+
+body {
+  background-color: var(--apple-bg);
+  color: var(--apple-text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  min-height: 100vh;
+}
+
+.apple-glass {
+  background: rgba(18, 19, 23, 0.75);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.4);
+}
+
+.apple-pill-btn {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.apple-pill-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.apple-pill-btn:active {
+  transform: scale(0.96);
+}
+
+.apple-primary-btn {
+  background: #0071e3;
+  color: #ffffff;
+  border-radius: 9999px;
+  font-weight: 500;
+  transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1), background-color 120ms ease;
+  box-shadow: 0 2px 12px rgba(0, 113, 227, 0.3);
+}
+
+.apple-primary-btn:hover {
+  background: #0077ed;
+}
+
+.apple-primary-btn:active {
+  transform: scale(0.96);
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #000000;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}

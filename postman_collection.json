@@ -1,0 +1,134 @@
+{
+  "info": {
+    "_postman_id": "paypilot-paypal-ai-hackathon",
+    "name": "PayPilot API Collection (PayPal + AI Spend Guardian)",
+    "description": "Postman Collection for PayPilot — Autonomous Subscription Management & PayPal Sandbox API Integrations.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "PayPal Subscriptions",
+      "item": [
+        {
+          "name": "Cancel Subscription Agreement",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"CANCEL\",\n  \"subscriptionId\": \"I-PP-SUB-881230\",\n  \"reason\": \"Cancelled via PayPilot AI Financial Guardian\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/paypal/subscription",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "paypal", "subscription"]
+            }
+          }
+        },
+        {
+          "name": "Suspend Subscription Agreement",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"SUSPEND\",\n  \"subscriptionId\": \"I-PP-SUB-224411\",\n  \"reason\": \"Paused via PayPilot Autonomous Spend Guardian\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/paypal/subscription",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "paypal", "subscription"]
+            }
+          }
+        },
+        {
+          "name": "Get Subscription Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/paypal/subscription?subscriptionId=I-PP-SUB-994101",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "paypal", "subscription"],
+              "query": [
+                {
+                  "key": "subscriptionId",
+                  "value": "I-PP-SUB-994101"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "AI Agent Copilot",
+      "item": [
+        {
+          "name": "Audit & Tool Dispatch Chat",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Cut zombie subscriptions and cancel Claude Pro\"\n    }\n  ],\n  \"subscriptions\": [\n    {\n      \"id\": \"sub_claude_pro\",\n      \"name\": \"Claude Pro\",\n      \"vendor\": \"Anthropic\",\n      \"category\": \"AI_AND_ML\",\n      \"amount\": 20.00,\n      \"currency\": \"USD\",\n      \"billingCycle\": \"MONTHLY\",\n      \"status\": \"ACTIVE\",\n      \"nextBillingDate\": \"2026-11-14T00:00:00Z\",\n      \"lastBilledDate\": \"2026-10-14T00:00:00Z\",\n      \"paypalAgreementId\": \"I-PP-SUB-881230\",\n      \"usageScore\": 28,\n      \"planName\": \"Individual Pro\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/agent/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "agent", "chat"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Zapier Webhooks",
+      "item": [
+        {
+          "name": "Dispatch Cancellation Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event\": \"SUBSCRIPTION_CANCELLED\",\n  \"subscription\": {\n    \"name\": \"Claude Pro\",\n    \"paypalAgreementId\": \"I-PP-SUB-881230\",\n    \"amountSaved\": 20.00\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/zapier/webhook",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "zapier", "webhook"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    }
+  ]
+}
