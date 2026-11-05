@@ -2,17 +2,18 @@
 
 import React, { useState, useMemo } from 'react';
 import { Subscription } from '@/types';
-import { Search, Pause, X, Loader2, FileSpreadsheet } from 'lucide-react';
+import { Search, Pause, X, Play, Loader2, FileSpreadsheet, ExternalLink, RefreshCw, CreditCard } from 'lucide-react';
 import { PowerAuditModal } from '@/components/PowerAuditModal';
 import { toast } from 'sonner';
 
-export type SubscriptionFilterType = 'ALL' | 'ACTIVE' | 'UPCOMING' | 'LOW_USAGE' | 'PRICE_CREEP';
+export type SubscriptionFilterType = 'ALL' | 'ACTIVE' | 'PAYPAL_LIVE' | 'UPCOMING' | 'LOW_USAGE' | 'PRICE_CREEP';
 
 interface SubscriptionsTableViewProps {
   subscriptions: Subscription[];
   currencySymbol?: string;
   initialFilter?: SubscriptionFilterType;
-  onExecuteAction: (action: 'CANCEL' | 'SUSPEND', id: string, agreementId: string) => Promise<void>;
+  onExecuteAction: (action: 'CANCEL' | 'SUSPEND' | 'ACTIVATE', id: string, agreementId: string) => Promise<void>;
+  onSyncStatus?: (subscriptionId: string, agreementId: string) => Promise<void>;
 }
 
 export function SubscriptionsTableView({
@@ -20,6 +21,7 @@ export function SubscriptionsTableView({
   currencySymbol = '$',
   initialFilter = 'ALL',
   onExecuteAction,
+  onSyncStatus,
 }: SubscriptionsTableViewProps) {
   const [showAuditModal, setShowAuditModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -27,11 +29,12 @@ export function SubscriptionsTableView({
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
   const filteredSubscriptions = useMemo(() => {
-    const now = new Date('2026-11-05T00:00:00Z');
+    const now = new Date();
     const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
     return subscriptions.filter((sub) => {
       if (selectedFilter === 'ACTIVE' && sub.status !== 'ACTIVE') return false;
+      if (selectedFilter === 'PAYPAL_LIVE' && sub.dataSource !== 'PAYPAL_SANDBOX') return false;
       if (selectedFilter === 'LOW_USAGE' && sub.usageScore >= 40) return false;
       if (selectedFilter === 'PRICE_CREEP' && (!sub.priceCreepRisk || sub.priceCreepRisk.percentIncrease <= 0)) return false;
       if (selectedFilter === 'UPCOMING') {
@@ -46,24 +49,41 @@ export function SubscriptionsTableView({
         sub.name.toLowerCase().includes(query) ||
         sub.vendor.toLowerCase().includes(query) ||
         sub.category.toLowerCase().includes(query) ||
-        sub.planName.toLowerCase().includes(query)
+        sub.planName.toLowerCase().includes(query) ||
+        sub.paypalAgreementId.toLowerCase().includes(query)
       );
     });
   }, [subscriptions, selectedFilter, searchQuery]);
 
-  const handleAction = async (action: 'CANCEL' | 'SUSPEND', sub: Subscription) => {
+  const handleAction = async (action: 'CANCEL' | 'SUSPEND' | 'ACTIVATE', sub: Subscription) => {
     try {
       setLoadingId(sub.id);
       await onExecuteAction(action, sub.id, sub.paypalAgreementId);
       toast.success(
         action === 'CANCEL' 
           ? `${sub.name} cancelled via PayPal` 
-          : `${sub.name} paused via PayPal`
+          : action === 'SUSPEND'
+          ? `${sub.name} paused via PayPal`
+          : `${sub.name} reactivated via PayPal`
       );
     } catch {
       toast.error(`Failed to ${action.toLowerCase()} ${sub.name}`);
     } finally {
       setLoadingId(null);
+    }
+  };
+
+  const handleSync = async (sub: Subscription) => {
+    if (onSyncStatus) {
+      setLoadingId(sub.id);
+      try {
+        await onSyncStatus(sub.id, sub.paypalAgreementId);
+        toast.success(`Synchronized status for ${sub.name}`);
+      } catch {
+        toast.error(`Failed to sync status for ${sub.name}`);
+      } finally {
+        setLoadingId(null);
+      }
     }
   };
 
@@ -84,7 +104,7 @@ export function SubscriptionsTableView({
             Subscriptions
           </h1>
           <p className="text-xs text-[#86868b] mt-0.5">
-            {subscriptions.length} recurring commitments tracked
+            {subscriptions.length} recurring commitments tracked • Live PayPal Sandbox & Local Vault
           </p>
         </div>
 
@@ -115,6 +135,7 @@ export function SubscriptionsTableView({
         {(
           [
             { id: 'ALL', label: 'All' },
+            { id: 'PAYPAL_LIVE', label: 'PayPal Sandbox Live' },
             { id: 'ACTIVE', label: 'Active' },
             { id: 'UPCOMING', label: 'Renewing Soon' },
             { id: 'LOW_USAGE', label: 'Low Usage (<40%)' },
@@ -143,7 +164,7 @@ export function SubscriptionsTableView({
               <tr className="border-b border-white/[0.08] text-[#86868b] font-medium bg-white/[0.02]">
                 <th className="py-3 px-5">Service</th>
                 <th className="py-3 px-4">Rate</th>
-                <th className="py-3 px-4">Billing Cycle</th>
+                <th className="py-3 px-4">Agreement / Source</th>
                 <th className="py-3 px-4">Next Renewal</th>
                 <th className="py-3 px-4">Usage</th>
                 <th className="py-3 px-4">Status</th>
@@ -154,7 +175,7 @@ export function SubscriptionsTableView({
               {filteredSubscriptions.map((sub) => {
                 const isLoading = loadingId === sub.id;
                 const isCancelled = sub.status === 'CANCELLED';
-                const isSuspended = sub.status === 'SUSPENDED';
+                const isPending = sub.status === 'APPROVAL_PENDING';
 
                 return (
                   <tr
@@ -164,6 +185,17 @@ export function SubscriptionsTableView({
                     <td className="py-4 px-5">
                       <div className="font-medium text-white text-[13px] flex items-center gap-2">
                         <span>{sub.name}</span>
+                        {sub.dataSource === 'PAYPAL_SANDBOX' && (
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#0071e3]/10 text-[#2997ff] border border-[#0071e3]/20 flex items-center gap-1">
+                            <CreditCard className="w-2.5 h-2.5" />
+                            PayPal Sandbox
+                          </span>
+                        )}
+                        {sub.dataSource === 'DEMO_SEED' && (
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.05] text-[#86868b] border border-white/[0.08]">
+                            Demo Seed
+                          </span>
+                        )}
                         {sub.priceCreepRisk && sub.priceCreepRisk.percentIncrease > 0 && (
                           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">
                             +{sub.priceCreepRisk.percentIncrease}%
@@ -177,10 +209,24 @@ export function SubscriptionsTableView({
 
                     <td className="py-4 px-4 font-mono font-medium text-white tabular-nums">
                       {currencySymbol}{sub.amount.toFixed(2)}
+                      <span className="text-[10px] text-[#86868b] ml-1 font-sans">/{sub.billingCycle.toLowerCase()}</span>
                     </td>
 
-                    <td className="py-4 px-4 text-[#86868b] capitalize">
-                      {sub.billingCycle.toLowerCase()}
+                    <td className="py-4 px-4 font-mono text-[11px] text-[#86868b]">
+                      <div className="flex items-center gap-1.5">
+                        <span>{sub.paypalAgreementId}</span>
+                        {onSyncStatus && sub.dataSource === 'PAYPAL_SANDBOX' && (
+                          <button
+                            type="button"
+                            onClick={() => handleSync(sub)}
+                            disabled={isLoading}
+                            title="Sync status from PayPal Sandbox"
+                            className="p-1 rounded hover:bg-white/[0.08] text-[#86868b] hover:text-white transition-colors"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
+                          </button>
+                        )}
+                      </div>
                     </td>
 
                     <td className="py-4 px-4 text-[#86868b] tabular-nums">
@@ -214,6 +260,8 @@ export function SubscriptionsTableView({
                             ? 'bg-[#30d158]/10 text-[#30d158] border-[#30d158]/20'
                             : sub.status === 'SUSPENDED'
                             ? 'bg-[#ff9f0a]/10 text-[#ff9f0a] border-[#ff9f0a]/20'
+                            : sub.status === 'APPROVAL_PENDING'
+                            ? 'bg-[#2997ff]/10 text-[#2997ff] border-[#2997ff]/20'
                             : 'bg-white/[0.05] text-[#86868b] border-white/[0.08]'
                         }`}
                       >
@@ -224,6 +272,16 @@ export function SubscriptionsTableView({
                     <td className="py-4 px-5 text-right">
                       {isCancelled ? (
                         <span className="text-[11px] text-[#86868b]">Cancelled</span>
+                      ) : isPending && sub.approveUrl ? (
+                        <a
+                          href={sub.approveUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0071e3] hover:bg-[#0077ed] text-white text-[11px] font-semibold transition-all active:scale-[0.96]"
+                        >
+                          <span>Approve</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
                       ) : (
                         <div className="flex items-center justify-end gap-1.5">
                           {sub.status === 'ACTIVE' && (
@@ -239,6 +297,22 @@ export function SubscriptionsTableView({
                                 <Pause className="w-3 h-3" />
                               )}
                               <span>Pause</span>
+                            </button>
+                          )}
+
+                          {sub.status === 'SUSPENDED' && (
+                            <button
+                              type="button"
+                              disabled={isLoading}
+                              onClick={() => handleAction('ACTIVATE', sub)}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[11px] font-medium transition-all active:scale-[0.96] flex items-center gap-1 disabled:opacity-50"
+                            >
+                              {isLoading ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Play className="w-3 h-3" />
+                              )}
+                              <span>Resume</span>
                             </button>
                           )}
 

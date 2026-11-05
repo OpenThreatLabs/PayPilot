@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Subscription } from '@/types';
-import { CheckCircle2, PauseCircle, XCircle, Zap, ShieldAlert } from 'lucide-react';
+import { CheckCircle2, PauseCircle, XCircle } from 'lucide-react';
 
 interface SubscriptionsListProps {
   subscriptions: Subscription[];

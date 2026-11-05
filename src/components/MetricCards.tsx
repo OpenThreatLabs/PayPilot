@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { SpendAnalytics } from '@/types';
-import { ArrowUpRight, TrendingDown, AlertTriangle, Sparkles } from 'lucide-react';
+import { TrendingDown, AlertTriangle, Sparkles } from 'lucide-react';
 
 interface MetricCardsProps {
   analytics: SpendAnalytics;

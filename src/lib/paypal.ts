@@ -4,9 +4,16 @@ interface PayPalAuthResponse {
   expires_in: number;
 }
 
+interface CachedToken {
+  token: string;
+  expiresAt: number;
+}
+
+let cachedAuth: CachedToken | null = null;
+
 const PAYPAL_API_BASE = process.env.PAYPAL_API_BASE || 'https://api-m.sandbox.paypal.com';
 
-export async function getPayPalAccessToken(): Promise<string> {
+export async function getPayPalAccessToken(forceRefresh = false): Promise<string> {
   const clientId = process.env.PAYPAL_CLIENT_ID;
   const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
 
@@ -14,26 +21,223 @@ export async function getPayPalAccessToken(): Promise<string> {
     return 'mock_sandbox_access_token_paypilot';
   }
 
-  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-
-  const response = await fetch(`${PAYPAL_API_BASE}/v1/oauth2/token`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: 'grant_type=client_credentials',
-  });
-
-  if (!response.ok) {
-    throw new Error(`PayPal OAuth failed: ${response.statusText}`);
+  const now = Date.now();
+  if (!forceRefresh && cachedAuth && cachedAuth.expiresAt > now + 60000) {
+    return cachedAuth.token;
   }
 
-  const data: PayPalAuthResponse = await response.json();
-  return data.access_token;
+  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+
+  try {
+    const response = await fetch(`${PAYPAL_API_BASE}/v1/oauth2/token`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'grant_type=client_credentials',
+    });
+
+    if (!response.ok) {
+      console.warn(`[PayPal OAuth] Request failed with status ${response.status}: ${response.statusText}`);
+      return 'mock_sandbox_access_token_paypilot';
+    }
+
+    const data: PayPalAuthResponse = await response.json();
+    cachedAuth = {
+      token: data.access_token,
+      expiresAt: now + (data.expires_in * 1000),
+    };
+    return data.access_token;
+  } catch (error) {
+    console.warn('[PayPal OAuth] Connection error:', error instanceof Error ? error.message : error);
+    return 'mock_sandbox_access_token_paypilot';
+  }
+}
+
+export interface CreateSubscriptionParams {
+  name: string;
+  vendor?: string;
+  description?: string;
+  amount: number;
+  currency?: string;
+  billingCycle: 'MONTHLY' | 'YEARLY' | 'QUARTERLY';
+  returnUrl?: string;
+  cancelUrl?: string;
+}
+
+export interface CreateSubscriptionResult {
+  success: boolean;
+  subscriptionId: string;
+  planId: string;
+  status: 'APPROVAL_PENDING' | 'ACTIVE' | 'PENDING';
+  approveUrl: string;
+  isSandboxLive: boolean;
+  mocked?: boolean;
+}
+
+export async function createPayPalSubscription(
+  params: CreateSubscriptionParams
+): Promise<CreateSubscriptionResult> {
+  const token = await getPayPalAccessToken();
+  const currency = params.currency || 'USD';
+  const amountStr = params.amount.toFixed(2);
+
+  if (token === 'mock_sandbox_access_token_paypilot') {
+    const simId = `I-PP-SBX-${Math.floor(100000 + Math.random() * 900000)}`;
+    const returnUrl = params.returnUrl || 'http://localhost:3000';
+    const approveUrl = `${returnUrl}${returnUrl.includes('?') ? '&' : '?'}paypal_sandbox_approval=${simId}&status=approved`;
+
+    return {
+      success: true,
+      subscriptionId: simId,
+      planId: `P-SBX-${Math.floor(10000 + Math.random() * 90000)}`,
+      status: 'APPROVAL_PENDING',
+      approveUrl,
+      isSandboxLive: false,
+      mocked: true,
+    };
+  }
+
+  const productRes = await fetch(`${PAYPAL_API_BASE}/v1/catalogs/products`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'PayPal-Request-Id': `prod_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    },
+    body: JSON.stringify({
+      name: params.name.slice(0, 127),
+      description: (params.description || `${params.name} subscription managed by PayPilot`).slice(0, 256),
+      type: 'SERVICE',
+      category: 'SOFTWARE',
+    }),
+  });
+
+  if (!productRes.ok) {
+    const errText = await productRes.text();
+    throw new Error(`Failed to create PayPal catalog product (${productRes.status}): ${errText}`);
+  }
+
+  const productData = await productRes.json();
+  const productId = productData.id;
+
+  const intervalUnit = params.billingCycle === 'YEARLY' ? 'YEAR' : 'MONTH';
+  const intervalCount = params.billingCycle === 'QUARTERLY' ? 3 : 1;
+
+  const planRes = await fetch(`${PAYPAL_API_BASE}/v1/billing/plans`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'PayPal-Request-Id': `plan_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    },
+    body: JSON.stringify({
+      product_id: productId,
+      name: `${params.name} ${params.billingCycle} Plan`,
+      description: `Recurring ${params.billingCycle.toLowerCase()} billing for ${params.name}`,
+      status: 'ACTIVE',
+      billing_cycles: [
+        {
+          frequency: {
+            interval_unit: intervalUnit,
+            interval_count: intervalCount,
+          },
+          tenure_type: 'REGULAR',
+          sequence: 1,
+          total_cycles: 0,
+          pricing_scheme: {
+            fixed_price: {
+              value: amountStr,
+              currency_code: currency,
+            },
+          },
+        },
+      ],
+      payment_preferences: {
+        auto_bill_outstanding: true,
+        setup_fee_failure_action: 'CONTINUE',
+        payment_failure_threshold: 3,
+      },
+    }),
+  });
+
+  if (!planRes.ok) {
+    const errText = await planRes.text();
+    throw new Error(`Failed to create PayPal billing plan (${planRes.status}): ${errText}`);
+  }
+
+  const planData = await planRes.json();
+  const planId = planData.id;
+
+  const returnUrl = params.returnUrl || 'http://localhost:3000';
+  const cancelUrl = params.cancelUrl || 'http://localhost:3000';
+
+  const subRes = await fetch(`${PAYPAL_API_BASE}/v1/billing/subscriptions`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'PayPal-Request-Id': `sub_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    },
+    body: JSON.stringify({
+      plan_id: planId,
+      quantity: '1',
+      subscriber: {
+        name: {
+          given_name: 'Sandbox',
+          surname: 'Tester',
+        },
+        email_address: 'sandbox-buyer@paypilot.internal',
+      },
+      application_context: {
+        brand_name: 'PayPilot Autonomous Guardian',
+        locale: 'en-US',
+        shipping_preference: 'NO_SHIPPING',
+        user_action: 'SUBSCRIBE_NOW',
+        payment_method: {
+          payer_selected: 'PAYPAL',
+          payee_preferred: 'IMMEDIATE_PAYMENT_REQUIRED',
+        },
+        return_url: returnUrl,
+        cancel_url: cancelUrl,
+      },
+    }),
+  });
+
+  if (!subRes.ok) {
+    const errText = await subRes.text();
+    throw new Error(`Failed to create PayPal subscription (${subRes.status}): ${errText}`);
+  }
+
+  const subData = await subRes.json();
+  const approveLink = subData.links?.find((l: { rel: string; href: string }) => l.rel === 'approve');
+
+  return {
+    success: true,
+    subscriptionId: subData.id,
+    planId,
+    status: subData.status || 'APPROVAL_PENDING',
+    approveUrl: approveLink?.href || '',
+    isSandboxLive: true,
+    mocked: false,
+  };
 }
 
 export async function getPayPalSubscriptionDetails(subscriptionId: string) {
+  if (subscriptionId.startsWith('I-PP-SUB-') || subscriptionId.startsWith('I-PP-SBX-')) {
+    return {
+      id: subscriptionId,
+      status: 'ACTIVE',
+      status_update_time: new Date().toISOString(),
+      plan_id: 'P-5ML4271244454362WXNWU5NQ',
+      start_time: '2026-01-01T00:00:00Z',
+      quantity: '1',
+      mocked: true,
+      dataSource: subscriptionId.startsWith('I-PP-SBX-') ? 'PAYPAL_SANDBOX' : 'DEMO_SEED',
+    };
+  }
+
   const token = await getPayPalAccessToken();
 
   if (token === 'mock_sandbox_access_token_paypilot') {
@@ -44,7 +248,8 @@ export async function getPayPalSubscriptionDetails(subscriptionId: string) {
       plan_id: 'P-5ML4271244454362WXNWU5NQ',
       start_time: '2026-01-01T00:00:00Z',
       quantity: '1',
-      mocked: true
+      mocked: true,
+      dataSource: 'DEMO_SEED',
     };
   }
 
@@ -57,13 +262,33 @@ export async function getPayPalSubscriptionDetails(subscriptionId: string) {
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch PayPal subscription: ${response.statusText}`);
+    throw new Error(`Failed to fetch PayPal subscription (${response.status}): ${response.statusText}`);
   }
 
-  return response.json();
+  const data = await response.json();
+  return {
+    ...data,
+    dataSource: 'PAYPAL_SANDBOX',
+    mocked: false,
+  };
 }
 
-export async function cancelPayPalSubscription(subscriptionId: string, reason: string = 'Cancelled via PayPilot AI Financial Guardian') {
+export async function cancelPayPalSubscription(
+  subscriptionId: string,
+  reason: string = 'Cancelled via PayPilot AI Financial Guardian'
+) {
+  if (subscriptionId.startsWith('I-PP-SUB-') || subscriptionId.startsWith('I-PP-SBX-')) {
+    return {
+      success: true,
+      subscriptionId,
+      status: 'CANCELLED',
+      reason,
+      executedAt: new Date().toISOString(),
+      mocked: true,
+      dataSource: subscriptionId.startsWith('I-PP-SBX-') ? 'PAYPAL_SANDBOX' : 'DEMO_SEED',
+    };
+  }
+
   const token = await getPayPalAccessToken();
 
   if (token === 'mock_sandbox_access_token_paypilot') {
@@ -73,7 +298,7 @@ export async function cancelPayPalSubscription(subscriptionId: string, reason: s
       status: 'CANCELLED',
       reason,
       executedAt: new Date().toISOString(),
-      mocked: true
+      mocked: true,
     };
   }
 
@@ -87,7 +312,8 @@ export async function cancelPayPalSubscription(subscriptionId: string, reason: s
   });
 
   if (!response.ok && response.status !== 204) {
-    throw new Error(`PayPal subscription cancellation failed: ${response.statusText}`);
+    const errText = await response.text();
+    throw new Error(`PayPal subscription cancellation failed (${response.status}): ${errText}`);
   }
 
   return {
@@ -96,11 +322,27 @@ export async function cancelPayPalSubscription(subscriptionId: string, reason: s
     status: 'CANCELLED',
     reason,
     executedAt: new Date().toISOString(),
-    mocked: false
+    mocked: false,
+    dataSource: 'PAYPAL_SANDBOX',
   };
 }
 
-export async function suspendPayPalSubscription(subscriptionId: string, reason: string = 'Paused via PayPilot Autonomous Spend Guardian') {
+export async function suspendPayPalSubscription(
+  subscriptionId: string,
+  reason: string = 'Paused via PayPilot Autonomous Spend Guardian'
+) {
+  if (subscriptionId.startsWith('I-PP-SUB-') || subscriptionId.startsWith('I-PP-SBX-')) {
+    return {
+      success: true,
+      subscriptionId,
+      status: 'SUSPENDED',
+      reason,
+      executedAt: new Date().toISOString(),
+      mocked: true,
+      dataSource: subscriptionId.startsWith('I-PP-SBX-') ? 'PAYPAL_SANDBOX' : 'DEMO_SEED',
+    };
+  }
+
   const token = await getPayPalAccessToken();
 
   if (token === 'mock_sandbox_access_token_paypilot') {
@@ -110,7 +352,7 @@ export async function suspendPayPalSubscription(subscriptionId: string, reason: 
       status: 'SUSPENDED',
       reason,
       executedAt: new Date().toISOString(),
-      mocked: true
+      mocked: true,
     };
   }
 
@@ -124,7 +366,8 @@ export async function suspendPayPalSubscription(subscriptionId: string, reason: 
   });
 
   if (!response.ok && response.status !== 204) {
-    throw new Error(`PayPal subscription suspension failed: ${response.statusText}`);
+    const errText = await response.text();
+    throw new Error(`PayPal subscription suspension failed (${response.status}): ${errText}`);
   }
 
   return {
@@ -133,6 +376,60 @@ export async function suspendPayPalSubscription(subscriptionId: string, reason: 
     status: 'SUSPENDED',
     reason,
     executedAt: new Date().toISOString(),
-    mocked: false
+    mocked: false,
+    dataSource: 'PAYPAL_SANDBOX',
+  };
+}
+
+export async function activatePayPalSubscription(
+  subscriptionId: string,
+  reason: string = 'Reactivated via PayPilot'
+) {
+  if (subscriptionId.startsWith('I-PP-SUB-') || subscriptionId.startsWith('I-PP-SBX-')) {
+    return {
+      success: true,
+      subscriptionId,
+      status: 'ACTIVE',
+      reason,
+      executedAt: new Date().toISOString(),
+      mocked: true,
+    };
+  }
+
+  const token = await getPayPalAccessToken();
+
+  if (token === 'mock_sandbox_access_token_paypilot') {
+    return {
+      success: true,
+      subscriptionId,
+      status: 'ACTIVE',
+      reason,
+      executedAt: new Date().toISOString(),
+      mocked: true,
+    };
+  }
+
+  const response = await fetch(`${PAYPAL_API_BASE}/v1/billing/subscriptions/${subscriptionId}/activate`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ reason }),
+  });
+
+  if (!response.ok && response.status !== 204) {
+    const errText = await response.text();
+    throw new Error(`PayPal subscription activation failed (${response.status}): ${errText}`);
+  }
+
+  return {
+    success: true,
+    subscriptionId,
+    status: 'ACTIVE',
+    reason,
+    executedAt: new Date().toISOString(),
+    mocked: false,
+    dataSource: 'PAYPAL_SANDBOX',
   };
 }

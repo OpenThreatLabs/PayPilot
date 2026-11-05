@@ -15,7 +15,8 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     paypalAgreementId: 'I-PP-SUB-994101',
     usageScore: 84,
     redundancyGroup: 'GENERAL_LLM',
-    planName: 'Plus Monthly Tier'
+    planName: 'Plus Monthly Tier',
+    dataSource: 'DEMO_SEED'
   },
   {
     id: 'sub_claude_pro',
@@ -31,7 +32,8 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     paypalAgreementId: 'I-PP-SUB-881230',
     usageScore: 28,
     redundancyGroup: 'GENERAL_LLM',
-    planName: 'Individual Pro'
+    planName: 'Individual Pro',
+    dataSource: 'DEMO_SEED'
   },
   {
     id: 'sub_github_copilot',
@@ -46,7 +48,8 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     lastBilledDate: '2026-10-20T00:00:00Z',
     paypalAgreementId: 'I-PP-SUB-772990',
     usageScore: 92,
-    planName: 'Copilot Business Seat'
+    planName: 'Copilot Business Seat',
+    dataSource: 'DEMO_SEED'
   },
   {
     id: 'sub_aws_cloudwatch',
@@ -61,7 +64,8 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     lastBilledDate: '2026-10-06T00:00:00Z',
     paypalAgreementId: 'I-PP-SUB-551029',
     usageScore: 65,
-    planName: 'Aggregated Retention Plan'
+    planName: 'Aggregated Retention Plan',
+    dataSource: 'DEMO_SEED'
   },
   {
     id: 'sub_figma_org',
@@ -77,7 +81,8 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     paypalAgreementId: 'I-PP-SUB-331002',
     usageScore: 78,
     redundancyGroup: 'DESIGN_VECTOR',
-    planName: 'Single Editor Seat'
+    planName: 'Single Editor Seat',
+    dataSource: 'DEMO_SEED'
   },
   {
     id: 'sub_canva_teams',
@@ -93,7 +98,8 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     paypalAgreementId: 'I-PP-SUB-224411',
     usageScore: 12,
     redundancyGroup: 'DESIGN_VECTOR',
-    planName: 'Pro Creator Monthly'
+    planName: 'Pro Creator Monthly',
+    dataSource: 'DEMO_SEED'
   },
   {
     id: 'sub_netflix_uhd',
@@ -109,6 +115,7 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     paypalAgreementId: 'I-PP-SUB-119933',
     usageScore: 35,
     planName: 'Premium Family',
+    dataSource: 'DEMO_SEED',
     priceCreepRisk: {
       previousAmount: 19.99,
       percentIncrease: 15.0
@@ -127,6 +134,7 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     lastBilledDate: '2026-10-25T00:00:00Z',
     paypalAgreementId: 'I-PP-SUB-661849',
     usageScore: 70,
-    planName: 'Workspace Member + AI'
+    planName: 'Workspace Member + AI',
+    dataSource: 'DEMO_SEED'
   }
 ];

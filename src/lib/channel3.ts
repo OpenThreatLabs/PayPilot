@@ -8,7 +8,29 @@ export interface Channel3Product {
   merchantName: string;
   buyUrl: string;
   category: string;
+  recurringOrLifetime?: 'LIFETIME' | 'ANNUAL' | 'CHEAPER_MONTHLY';
   savingVersusRecurringYearly?: number;
+}
+
+interface RawChannel3Offer {
+  price?: number;
+  currency?: string;
+  merchant?: string;
+  url?: string;
+}
+
+interface RawChannel3Product {
+  id?: string;
+  title: string;
+  brand?: string;
+  price?: number;
+  offers?: RawChannel3Offer[];
+  images?: string[];
+  category?: string;
+}
+
+interface RawChannel3Response {
+  products?: RawChannel3Product[];
 }
 
 const CHANNEL3_API_BASE = process.env.CHANNEL3_API_BASE || 'https://api.trychannel3.com/v1';
@@ -17,7 +39,7 @@ export async function searchAlternativeProducts(query: string, limit: number = 4
   const apiKey = process.env.CHANNEL3_API_KEY;
 
   if (!apiKey) {
-    return getFallbackAlternatives(query);
+    return getFallbackAlternatives(query).slice(0, limit);
   }
 
   try {
@@ -34,15 +56,15 @@ export async function searchAlternativeProducts(query: string, limit: number = 4
     });
 
     if (!res.ok) {
-      return getFallbackAlternatives(query);
+      return getFallbackAlternatives(query).slice(0, limit);
     }
 
-    const data = await res.json();
+    const data: RawChannel3Response = await res.json();
     if (!data.products || !Array.isArray(data.products)) {
-      return getFallbackAlternatives(query);
+      return getFallbackAlternatives(query).slice(0, limit);
     }
 
-    return data.products.map((p: any) => ({
+    return data.products.slice(0, limit).map((p: RawChannel3Product) => ({
       id: p.id || `ch3_${Math.random().toString(36).substring(2, 7)}`,
       title: p.title,
       brand: p.brand || 'Verified Merchant',
@@ -52,9 +74,10 @@ export async function searchAlternativeProducts(query: string, limit: number = 4
       merchantName: p.offers?.[0]?.merchant || 'Channel3 Network Partner',
       buyUrl: p.offers?.[0]?.url || 'https://trychannel3.com',
       category: p.category || 'Productivity',
+      recurringOrLifetime: 'LIFETIME',
     }));
   } catch {
-    return getFallbackAlternatives(query);
+    return getFallbackAlternatives(query).slice(0, limit);
   }
 }
 
@@ -70,9 +93,10 @@ function getFallbackAlternatives(query: string): Channel3Product[] {
         price: 119.00,
         currency: 'USD',
         merchantName: 'Channel3 Software Deals',
-        buyUrl: 'https://trychannel3.com',
+        buyUrl: 'https://trychannel3.com/deals/ai-annual-pass',
         category: 'AI & ML',
-        savingVersusRecurringYearly: 121.00
+        recurringOrLifetime: 'ANNUAL',
+        savingVersusRecurringYearly: 121.00,
       },
       {
         id: 'ch3_local_npu',
@@ -81,10 +105,11 @@ function getFallbackAlternatives(query: string): Channel3Product[] {
         price: 189.99,
         currency: 'USD',
         merchantName: 'Retail Partner',
-        buyUrl: 'https://trychannel3.com',
-        category: 'Hardware',
-        savingVersusRecurringYearly: 290.00
-      }
+        buyUrl: 'https://trychannel3.com/deals/npu-accelerator',
+        category: 'AI & ML',
+        recurringOrLifetime: 'LIFETIME',
+        savingVersusRecurringYearly: 290.00,
+      },
     ];
   }
 
@@ -96,11 +121,75 @@ function getFallbackAlternatives(query: string): Channel3Product[] {
         brand: 'Serif Labs',
         price: 69.99,
         currency: 'USD',
-        merchantName: 'Channel3 Partner Network',
-        buyUrl: 'https://trychannel3.com',
-        category: 'Design & Creative',
-        savingVersusRecurringYearly: 110.00
-      }
+        merchantName: 'Serif Official Store',
+        buyUrl: 'https://affinity.serif.com/en-us/designer/',
+        category: 'DESIGN_CREATIVE',
+        recurringOrLifetime: 'LIFETIME',
+        savingVersusRecurringYearly: 110.00,
+      },
+      {
+        id: 'ch3_penpot',
+        title: 'Penpot Enterprise Self-Hosted Instance Support',
+        brand: 'Penpot Open Source',
+        price: 49.00,
+        currency: 'USD',
+        merchantName: 'Penpot Network',
+        buyUrl: 'https://penpot.app',
+        category: 'DESIGN_CREATIVE',
+        recurringOrLifetime: 'LIFETIME',
+        savingVersusRecurringYearly: 131.00,
+      },
+    ];
+  }
+
+  if (q.includes('copilot') || q.includes('dev') || q.includes('github') || q.includes('code')) {
+    return [
+      {
+        id: 'ch3_tabnine_perpetual',
+        title: 'Tabnine Local AI Code Completion (Perpetual Developer License)',
+        brand: 'Tabnine',
+        price: 144.00,
+        currency: 'USD',
+        merchantName: 'Tabnine Deals',
+        buyUrl: 'https://tabnine.com',
+        category: 'DEV_TOOLS',
+        recurringOrLifetime: 'ANNUAL',
+        savingVersusRecurringYearly: 84.00,
+      },
+    ];
+  }
+
+  if (q.includes('aws') || q.includes('cloud') || q.includes('infra') || q.includes('server')) {
+    return [
+      {
+        id: 'ch3_hetzner_dedicated',
+        title: 'Dedicated Cloud Telemetry & Metrics Server (Flat Rate)',
+        brand: 'Hetzner Cloud',
+        price: 38.00,
+        currency: 'USD',
+        merchantName: 'Hetzner Online',
+        buyUrl: 'https://hetzner.com/cloud',
+        category: 'CLOUD_INFRA',
+        recurringOrLifetime: 'CHEAPER_MONTHLY',
+        savingVersusRecurringYearly: 180.00,
+      },
+    ];
+  }
+
+  if (q.includes('netflix') || q.includes('stream') || q.includes('media')) {
+    return [
+      {
+        id: 'ch3_plex_lifetime',
+        title: 'Plex Pass Lifetime Subscription (Zero Monthly Fees)',
+        brand: 'Plex Inc',
+        price: 119.99,
+        currency: 'USD',
+        merchantName: 'Plex Official Store',
+        buyUrl: 'https://plex.tv/plex-pass',
+        category: 'STREAMING_MEDIA',
+        recurringOrLifetime: 'LIFETIME',
+        savingVersusRecurringYearly: 155.00,
+      },
     ];
   }
 
@@ -113,8 +202,9 @@ function getFallbackAlternatives(query: string): Channel3Product[] {
       currency: 'USD',
       merchantName: 'Channel3 Catalog',
       buyUrl: 'https://trychannel3.com',
-      category: 'Productivity',
-      savingVersusRecurringYearly: 151.00
-    }
+      category: 'PRODUCTIVITY',
+      recurringOrLifetime: 'LIFETIME',
+      savingVersusRecurringYearly: 151.00,
+    },
   ];
 }

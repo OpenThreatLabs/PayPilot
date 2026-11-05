@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { CATALOG_PRESETS, CatalogPreset } from '@/lib/sublyPresets';
 import { Subscription } from '@/types';
-import { Plus, X, Check } from 'lucide-react';
+import { X, Check } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface QuickAddModalProps {

@@ -5,9 +5,7 @@ import {
   Plus, 
   LayoutDashboard, 
   CreditCard, 
-  ShieldAlert, 
-  Calendar, 
-  Tag 
+  ShieldAlert 
 } from 'lucide-react';
 
 export type NavTab = 'DASHBOARD' | 'SUBSCRIPTIONS' | 'VIGIL';

@@ -8,8 +8,10 @@ import { SpendHeader } from '@/components/SpendHeader';
 import { SpendMetricCards } from '@/components/SpendMetricCards';
 import { SubscriptionsTableView, SubscriptionFilterType } from '@/components/SubscriptionsTableView';
 import { AddSubscriptionModal } from '@/components/AddSubscriptionModal';
+import { VigilChatView } from '@/components/VigilChatView';
 import { INITIAL_SUBSCRIPTIONS } from '@/lib/initialData';
 import { Subscription } from '@/types';
+import { toast } from 'sonner';
 
 const STORAGE_KEY = 'paypilot_user_subscriptions_vault_v1';
 
@@ -19,20 +21,59 @@ export default function Home() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showVigilDisclaimer, setShowVigilDisclaimer] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [subscriptions, setSubscriptions] = useState<Subscription[]>(INITIAL_SUBSCRIPTIONS);
   const [subscriptionFilter, setSubscriptionFilter] = useState<SubscriptionFilterType>('ALL');
 
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setSubscriptions(parsed);
+  // Initialize state from localStorage lazily, applying any URL approval updates on mount
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>(() => {
+    let initial = INITIAL_SUBSCRIPTIONS;
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            initial = parsed;
+          }
         }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const paypalAction = urlParams.get('paypal_action');
+        const sandboxSubApproval = urlParams.get('paypal_sandbox_approval');
+
+        if (paypalAction === 'approved' || sandboxSubApproval) {
+          initial = initial.map((s) => {
+            if (s.status === 'APPROVAL_PENDING' || s.paypalAgreementId === sandboxSubApproval) {
+              return {
+                ...s,
+                status: 'ACTIVE' as const,
+                lastSyncedAt: new Date().toISOString(),
+              };
+            }
+            return s;
+          });
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
+        }
+      } catch {
+        // Fallback
       }
-    } catch {
-      // Fallback to initial seed
+    }
+    return initial;
+  });
+
+  // Handle URL side effects (notifications & URL cleanup) without setting state in effect
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const paypalAction = urlParams.get('paypal_action');
+    const sandboxSubApproval = urlParams.get('paypal_sandbox_approval');
+
+    if (paypalAction === 'approved' || sandboxSubApproval) {
+      toast.success('PayPal Sandbox subscription checkout completed and approved!');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (paypalAction === 'cancelled') {
+      toast.info('PayPal subscription checkout was cancelled by user');
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, []);
 
@@ -50,6 +91,22 @@ export default function Home() {
 
   const handleAddSubscription = (newSub: Subscription) => {
     updateAndPersistSubscriptions((prev) => [newSub, ...prev]);
+
+    // Dispatch Zapier lifecycle event (non-blocking)
+    fetch('/api/zapier/webhook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: 'SUBSCRIPTION_CREATED',
+        subscription: {
+          id: newSub.id,
+          name: newSub.name,
+          amount: newSub.amount,
+          paypalAgreementId: newSub.paypalAgreementId,
+          dataSource: newSub.dataSource,
+        },
+      }),
+    }).catch(() => {});
   };
 
   const handleTabChange = (tab: NavTab) => {
@@ -68,7 +125,7 @@ export default function Home() {
   };
 
   const handleExecutePayPalAction = async (
-    action: 'CANCEL' | 'SUSPEND',
+    action: 'CANCEL' | 'SUSPEND' | 'ACTIVATE',
     subscriptionId: string,
     agreementId: string
   ) => {
@@ -78,25 +135,69 @@ export default function Home() {
       body: JSON.stringify({
         action,
         subscriptionId: agreementId,
-        reason: `Direct action from Subscriptions view: ${action}`,
+        reason: `Direct action from PayPilot UI: ${action}`,
       }),
     });
 
     if (!res.ok) {
-      throw new Error('PayPal action failed');
+      const err = await res.json();
+      throw new Error(err.error || 'PayPal action failed');
     }
+
+    const nextStatus = action === 'CANCEL' ? 'CANCELLED' : action === 'SUSPEND' ? 'SUSPENDED' : 'ACTIVE';
 
     updateAndPersistSubscriptions((prev) =>
       prev.map((s) => {
         if (s.id === subscriptionId || s.paypalAgreementId === agreementId) {
           return {
             ...s,
-            status: action === 'CANCEL' ? 'CANCELLED' : 'SUSPENDED',
+            status: nextStatus,
+            lastSyncedAt: new Date().toISOString(),
           };
         }
         return s;
       })
     );
+
+    // Dispatch Zapier lifecycle event (non-blocking)
+    fetch('/api/zapier/webhook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: action === 'CANCEL' ? 'SUBSCRIPTION_CANCELLED' : action === 'SUSPEND' ? 'SUBSCRIPTION_SUSPENDED' : 'SUBSCRIPTION_ACTIVATED',
+        subscription: {
+          id: subscriptionId,
+          paypalAgreementId: agreementId,
+          action,
+        },
+      }),
+    }).catch(() => {});
+  };
+
+  const handleSyncStatus = async (subscriptionId: string, agreementId: string) => {
+    const res = await fetch(`/api/paypal/subscription?subscriptionId=${encodeURIComponent(agreementId)}`);
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to fetch PayPal status');
+    }
+
+    const details = await res.json();
+    const liveStatus = details.status;
+
+    if (liveStatus) {
+      updateAndPersistSubscriptions((prev) =>
+        prev.map((s) => {
+          if (s.id === subscriptionId || s.paypalAgreementId === agreementId) {
+            return {
+              ...s,
+              status: liveStatus,
+              lastSyncedAt: new Date().toISOString(),
+            };
+          }
+          return s;
+        })
+      );
+    }
   };
 
   return (
@@ -141,7 +242,18 @@ export default function Home() {
                 currencySymbol={currency.symbol}
                 initialFilter={subscriptionFilter}
                 onExecuteAction={handleExecutePayPalAction}
+                onSyncStatus={handleSyncStatus}
               />
+            )}
+
+            {activeTab === 'VIGIL' && (
+              <div className="w-full flex justify-center">
+                <VigilChatView
+                  subscriptions={subscriptions}
+                  currencySymbol={currency.symbol}
+                  onExecuteAction={handleExecutePayPalAction}
+                />
+              </div>
             )}
           </div>
         </main>

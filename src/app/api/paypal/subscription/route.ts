@@ -2,16 +2,58 @@ import { NextResponse } from 'next/server';
 import { 
   cancelPayPalSubscription, 
   suspendPayPalSubscription, 
-  getPayPalSubscriptionDetails 
+  activatePayPalSubscription,
+  getPayPalSubscriptionDetails,
+  createPayPalSubscription,
 } from '@/lib/paypal';
+import { checkRateLimit, getClientIp, sanitizeUserText } from '@/lib/security';
 
 export async function POST(req: Request) {
   try {
-    const { action, subscriptionId, reason } = await req.json();
-
-    if (!action || !subscriptionId) {
+    const clientIp = getClientIp(req);
+    const rateLimit = checkRateLimit(clientIp, 60);
+    if (!rateLimit.allowed) {
       return NextResponse.json(
-        { error: 'Missing required parameters action or subscriptionId' }, 
+        { error: `Rate limit exceeded. Please retry in ${rateLimit.resetInSec} seconds.` },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.resetInSec) } }
+      );
+    }
+
+    const body = await req.json();
+    const action = typeof body.action === 'string' ? body.action.toUpperCase() : '';
+    const subscriptionId = typeof body.subscriptionId === 'string' ? sanitizeUserText(body.subscriptionId, 120) : '';
+    const reason = typeof body.reason === 'string' ? sanitizeUserText(body.reason, 256) : undefined;
+
+    // Handle Subscription Creation
+    if (action === 'CREATE') {
+      const { name, amount, billingCycle, vendor, currency, returnUrl, cancelUrl } = body;
+
+      if (!name || typeof amount !== 'number' || amount <= 0) {
+        return NextResponse.json(
+          { error: 'Valid service name and positive amount are required to create a subscription.' },
+          { status: 400 }
+        );
+      }
+
+      const cycle = ['MONTHLY', 'YEARLY', 'QUARTERLY'].includes(billingCycle) ? billingCycle : 'MONTHLY';
+
+      const createResult = await createPayPalSubscription({
+        name: sanitizeUserText(name, 120),
+        vendor: vendor ? sanitizeUserText(vendor, 120) : undefined,
+        amount: Math.round(amount * 100) / 100,
+        currency: currency || 'USD',
+        billingCycle: cycle,
+        returnUrl,
+        cancelUrl,
+      });
+
+      return NextResponse.json(createResult);
+    }
+
+    // Other actions require subscriptionId
+    if (!subscriptionId) {
+      return NextResponse.json(
+        { error: 'subscriptionId parameter is required for this action.' }, 
         { status: 400 }
       );
     }
@@ -26,8 +68,13 @@ export async function POST(req: Request) {
       return NextResponse.json(result);
     }
 
+    if (action === 'ACTIVATE') {
+      const result = await activatePayPalSubscription(subscriptionId, reason);
+      return NextResponse.json(result);
+    }
+
     return NextResponse.json(
-      { error: `Unsupported action: ${action}` }, 
+      { error: `Unsupported action: ${action}. Allowed: CREATE, CANCEL, SUSPEND, ACTIVATE` }, 
       { status: 400 }
     );
   } catch (error: unknown) {
@@ -38,13 +85,23 @@ export async function POST(req: Request) {
 
 export async function GET(req: Request) {
   try {
-    const { searchParams } = new URL(req.url);
-    const subscriptionId = searchParams.get('subscriptionId');
+    const clientIp = getClientIp(req);
+    const rateLimit = checkRateLimit(clientIp, 60);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: `Rate limit exceeded. Please retry in ${rateLimit.resetInSec} seconds.` },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.resetInSec) } }
+      );
+    }
 
-    if (!subscriptionId) {
+    const { searchParams } = new URL(req.url);
+    const rawId = searchParams.get('subscriptionId');
+
+    if (!rawId) {
       return NextResponse.json({ error: 'subscriptionId parameter required' }, { status: 400 });
     }
 
+    const subscriptionId = sanitizeUserText(rawId, 120);
     const details = await getPayPalSubscriptionDetails(subscriptionId);
     return NextResponse.json(details);
   } catch (error: unknown) {

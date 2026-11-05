@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 
 interface VigilDisclaimerModalProps {
   isOpen: boolean;
@@ -13,34 +13,24 @@ export function VigilDisclaimerModal({
   onAcknowledge,
   onCancel,
 }: VigilDisclaimerModalProps) {
-  const [mounted, setMounted] = useState(false);
-
   useEffect(() => {
-    if (isOpen) {
-      setMounted(true);
-      const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === 'Escape' && onCancel) {
-          onCancel();
-        }
-      };
-      window.addEventListener('keydown', handleKeyDown);
-      return () => window.removeEventListener('keydown', handleKeyDown);
-    } else {
-      const t = setTimeout(() => setMounted(false), 240);
-      return () => clearTimeout(t);
-    }
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && onCancel) {
+        onCancel();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onCancel]);
 
-  if (!mounted && !isOpen) return null;
+  if (!isOpen) return null;
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-all duration-200 ease-out ${
-        isOpen
-          ? 'bg-black/60 backdrop-blur-md opacity-100'
-          : 'bg-black/0 backdrop-blur-none opacity-0 pointer-events-none'
-      }`}
-      style={{ WebkitBackdropFilter: isOpen ? 'blur(20px)' : 'none' }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md opacity-100 transition-all duration-200 ease-out select-none"
+      style={{ WebkitBackdropFilter: 'blur(20px)' }}
       onClick={() => onCancel && onCancel()}
     >
       <div
@@ -48,9 +38,7 @@ export function VigilDisclaimerModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="vigil-disclaimer-title"
-        className={`w-full max-w-[460px] rounded-[24px] bg-[#1c1c1e]/90 border border-white/[0.12] shadow-2xl p-6 text-[#f5f5f7] transform transition-all duration-200 ease-out select-none ${
-          isOpen ? 'scale-100 opacity-100 translate-y-0' : 'scale-[0.96] opacity-0 translate-y-2'
-        }`}
+        className="w-full max-w-[460px] rounded-[24px] bg-[#1c1c1e]/90 border border-white/[0.12] shadow-2xl p-6 text-[#f5f5f7] transform transition-all duration-200 ease-out scale-100 opacity-100 translate-y-0"
         style={{
           boxShadow: '0 30px 60px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.15)',
         }}
