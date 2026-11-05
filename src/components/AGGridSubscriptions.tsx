@@ -9,18 +9,20 @@ import {
   ICellRendererParams 
 } from 'ag-grid-community';
 import { Subscription } from '@/types';
-import { Search } from 'lucide-react';
+import { Search, Pause, X, Loader2 } from 'lucide-react';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 interface AGGridSubscriptionsProps {
   subscriptions: Subscription[];
+  currencySymbol?: string;
   onActionClick: (sub: Subscription, actionType: 'CANCEL' | 'SUSPEND') => void;
   loadingId?: string | null;
 }
 
 export const AGGridSubscriptions: React.FC<AGGridSubscriptionsProps> = ({
   subscriptions,
+  currencySymbol = '$',
   onActionClick,
   loadingId,
 }) => {
@@ -39,13 +41,13 @@ export const AGGridSubscriptions: React.FC<AGGridSubscriptionsProps> = ({
           <div className="flex flex-col justify-center h-full">
             <div className="font-medium text-white flex items-center gap-2 leading-tight">
               {sub.name}
-              {sub.priceCreepRisk && (
-                <span className="text-[10px] text-[#ef4444] bg-[#ef4444]/10 border border-[#ef4444]/20 px-1 py-0.2 rounded font-mono">
+              {sub.priceCreepRisk && sub.priceCreepRisk.percentIncrease > 0 && (
+                <span className="text-[10px] text-red-400 bg-red-500/10 border border-red-500/20 px-1 py-0.2 rounded font-mono">
                   +{sub.priceCreepRisk.percentIncrease}%
                 </span>
               )}
             </div>
-            <div className="text-[11px] text-[#8c9099] mt-0.5">
+            <div className="text-[11px] text-[#86868b] mt-0.5">
               {sub.vendor} · {sub.planName}
             </div>
           </div>
@@ -58,7 +60,7 @@ export const AGGridSubscriptions: React.FC<AGGridSubscriptionsProps> = ({
       flex: 1.2,
       minWidth: 120,
       valueFormatter: (params) => (params.value || '').replace('_', ' '),
-      cellClass: 'text-xs text-[#8c9099] flex items-center font-mono',
+      cellClass: 'text-xs text-[#86868b] flex items-center',
     },
     {
       headerName: 'Rate',
@@ -68,9 +70,9 @@ export const AGGridSubscriptions: React.FC<AGGridSubscriptionsProps> = ({
       cellRenderer: (params: ICellRendererParams<Subscription>) => {
         if (!params.data) return null;
         return (
-          <div className="flex items-center h-full font-mono text-sm font-medium text-white">
-            ${params.data.amount.toFixed(2)}
-            <span className="text-[11px] text-[#5e626b] ml-1">/mo</span>
+          <div className="flex items-center h-full font-mono text-xs font-medium text-white tabular-nums">
+            {currencySymbol}{params.data.amount.toFixed(2)}
+            <span className="text-[11px] text-[#86868b] ml-1">/{params.data.billingCycle.toLowerCase()}</span>
           </div>
         );
       },
@@ -80,7 +82,7 @@ export const AGGridSubscriptions: React.FC<AGGridSubscriptionsProps> = ({
       field: 'paypalAgreementId',
       flex: 1.3,
       minWidth: 130,
-      cellClass: 'text-xs text-[#5e626b] font-mono flex items-center',
+      cellClass: 'text-xs text-[#86868b] font-mono flex items-center',
     },
     {
       headerName: 'Usage',
@@ -90,18 +92,17 @@ export const AGGridSubscriptions: React.FC<AGGridSubscriptionsProps> = ({
       cellRenderer: (params: ICellRendererParams<Subscription>) => {
         if (!params.data) return null;
         const score = params.data.usageScore;
-        const isLow = score < 30;
         return (
           <div className="flex items-center gap-2 h-full">
-            <div className="w-12 h-1.5 bg-[#23252a] rounded-full overflow-hidden">
+            <div className="w-14 h-1.5 bg-white/[0.08] rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full ${
-                  score > 60 ? 'bg-[#22c55e]' : score > 30 ? 'bg-[#f59e0b]' : 'bg-[#ef4444]'
+                  score >= 70 ? 'bg-[#30d158]' : score >= 40 ? 'bg-[#0071e3]' : 'bg-[#ff9f0a]'
                 }`}
                 style={{ width: `${score}%` }}
               />
             </div>
-            <span className={`text-xs font-mono ${isLow ? 'text-[#ef4444] font-medium' : 'text-[#8c9099]'}`}>
+            <span className="text-xs font-mono text-[#86868b] tabular-nums">
               {score}%
             </span>
           </div>
@@ -118,15 +119,17 @@ export const AGGridSubscriptions: React.FC<AGGridSubscriptionsProps> = ({
         const status = params.data.status;
         return (
           <div className="flex items-center h-full">
-            {status === 'ACTIVE' && (
-              <span className="text-[11px] text-[#22c55e] font-mono">Active</span>
-            )}
-            {status === 'SUSPENDED' && (
-              <span className="text-[11px] text-[#f59e0b] font-mono">Suspended</span>
-            )}
-            {status === 'CANCELLED' && (
-              <span className="text-[11px] text-[#5e626b] font-mono">Terminated</span>
-            )}
+            <span
+              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+                status === 'ACTIVE'
+                  ? 'bg-[#30d158]/10 text-[#30d158] border-[#30d158]/20'
+                  : status === 'SUSPENDED'
+                  ? 'bg-[#ff9f0a]/10 text-[#ff9f0a] border-[#ff9f0a]/20'
+                  : 'bg-white/[0.05] text-[#86868b] border-white/[0.08]'
+              }`}
+            >
+              {status}
+            </span>
           </div>
         );
       },
@@ -143,35 +146,39 @@ export const AGGridSubscriptions: React.FC<AGGridSubscriptionsProps> = ({
         const sub = params.data;
         const isWorking = loadingId === sub.id;
 
-        if (sub.status !== 'ACTIVE') {
+        if (sub.status === 'CANCELLED') {
           return (
-            <div className="flex items-center h-full text-xs text-[#5e626b]">
-              Closed
+            <div className="flex items-center h-full text-xs text-[#86868b]">
+              Cancelled
             </div>
           );
         }
 
         return (
           <div className="flex items-center gap-2 h-full">
-            <button
-              disabled={isWorking}
-              onClick={() => onActionClick(sub, 'SUSPEND')}
-              className="px-2.5 py-1 text-xs font-medium text-[#8c9099] hover:text-white bg-[#17181c] hover:bg-[#23252a] border border-[#23252a] rounded transition-colors disabled:opacity-40"
-            >
-              Pause
-            </button>
+            {sub.status === 'ACTIVE' && (
+              <button
+                disabled={isWorking}
+                onClick={() => onActionClick(sub, 'SUSPEND')}
+                className="px-2 py-1 text-[11px] font-medium text-white bg-white/[0.06] hover:bg-white/[0.12] rounded-lg transition-all active:scale-[0.96] disabled:opacity-40 flex items-center gap-1"
+              >
+                {isWorking ? <Loader2 className="w-3 h-3 animate-spin" /> : <Pause className="w-3 h-3" />}
+                Pause
+              </button>
+            )}
             <button
               disabled={isWorking}
               onClick={() => onActionClick(sub, 'CANCEL')}
-              className="px-2.5 py-1 text-xs font-medium text-[#ef4444] hover:text-[#f87171] bg-[#17181c] hover:bg-[#23252a] border border-[#23252a] rounded transition-colors disabled:opacity-40"
+              className="px-2 py-1 text-[11px] font-medium text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-all active:scale-[0.96] disabled:opacity-40 flex items-center gap-1"
             >
+              {isWorking ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
               Cancel
             </button>
           </div>
         );
       },
     },
-  ], [loadingId, onActionClick]);
+  ], [currencySymbol, loadingId, onActionClick]);
 
   const defaultColDef = useMemo<ColDef>(() => ({
     sortable: true,
@@ -180,39 +187,33 @@ export const AGGridSubscriptions: React.FC<AGGridSubscriptionsProps> = ({
   }), []);
 
   return (
-    <div className="bg-[#111215] border border-[#23252a] rounded-lg overflow-hidden">
-      <div className="px-5 py-3.5 border-b border-[#23252a] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#0c0d0f]">
-        <div>
-          <h3 className="text-sm font-semibold text-white">Active Commitments & Agreements</h3>
-          <p className="text-xs text-[#8c9099]">Real-time synchronization with PayPal Sandbox API</p>
+    <div className="rounded-2xl bg-[#1c1c1e]/60 border border-white/[0.08] overflow-hidden shadow-2xl backdrop-blur-xl">
+      <div className="px-5 py-3 border-b border-white/[0.08] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/[0.02]">
+        <div className="text-xs text-[#86868b]">
+          Multi-column sorting and column resizing enabled
         </div>
 
         <div className="relative">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#5e626b]" />
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b]" />
           <input
             type="text"
             value={quickFilterText}
             onChange={(e) => setQuickFilterText(e.target.value)}
-            placeholder="Search agreements..."
-            className="pl-8 pr-3 py-1 bg-[#17181c] border border-[#23252a] rounded text-xs text-white placeholder-[#5e626b] focus:outline-none focus:border-[#38bdf8] w-full sm:w-56"
+            placeholder="Quick search grid..."
+            className="pl-8 pr-3 py-1.5 bg-[#1c1c1e]/80 border border-white/[0.08] rounded-xl text-xs text-white placeholder-[#86868b] focus:outline-none focus:border-white/[0.2] transition-colors w-full sm:w-56"
           />
         </div>
       </div>
 
-      <div className="ag-theme-alpine-dark w-full h-[380px]">
+      <div className="ag-theme-alpine-dark w-full h-[460px]">
         <AgGridReact
           rowData={subscriptions}
           columnDefs={columnDefs}
           defaultColDef={defaultColDef}
           quickFilterText={quickFilterText}
           rowHeight={48}
-          headerHeight={36}
+          headerHeight={38}
         />
-      </div>
-
-      <div className="px-5 py-2.5 border-t border-[#23252a] bg-[#0c0d0f] flex items-center justify-between text-xs text-[#5e626b]">
-        <span>PayPal Subscriptions REST v1</span>
-        <span>{subscriptions.length} active records</span>
       </div>
     </div>
   );

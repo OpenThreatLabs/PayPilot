@@ -10,7 +10,7 @@ import {
   Tag 
 } from 'lucide-react';
 
-export type NavTab = 'DASHBOARD' | 'SUBSCRIPTIONS' | 'VIGIL' | 'RADAR' | 'DEALS';
+export type NavTab = 'DASHBOARD' | 'SUBSCRIPTIONS' | 'VIGIL';
 
 interface LeftSidebarProps {
   activeTab: NavTab;
@@ -29,8 +29,6 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
     { id: 'DASHBOARD' as NavTab, label: 'Overview', icon: LayoutDashboard },
     { id: 'SUBSCRIPTIONS' as NavTab, label: 'Subscriptions', icon: CreditCard },
     { id: 'VIGIL' as NavTab, label: 'Vigil', icon: ShieldAlert },
-    { id: 'RADAR' as NavTab, label: 'Renewal Radar', icon: Calendar },
-    { id: 'DEALS' as NavTab, label: 'Deal Radar', icon: Tag },
   ];
 
   return (
