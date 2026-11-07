@@ -2,13 +2,25 @@
 
 import React, { useState } from 'react';
 import { Channel3Product } from '@/lib/channel3';
-import { ExternalLink } from 'lucide-react';
+import { Sparkles, ExternalLink, Search, Loader2, ArrowUpRight, TrendingDown } from 'lucide-react';
 
 export const Channel3Deals: React.FC = () => {
-  const [query, setQuery] = useState('AI software');
+  const [query, setQuery] = useState('design');
   const [products, setProducts] = useState<Channel3Product[]>([
     {
       id: 'ch3_sample_1',
+      title: 'Affinity Designer 2 Lifetime License',
+      brand: 'Serif Labs',
+      price: 69.99,
+      currency: 'USD',
+      merchantName: 'Serif Official Store',
+      buyUrl: 'https://affinity.serif.com/en-us/designer/',
+      category: 'Design & Creative',
+      recurringOrLifetime: 'LIFETIME',
+      savingVersusRecurringYearly: 110.00,
+    },
+    {
+      id: 'ch3_sample_2',
       title: 'Unified AI Developer Pass (Annual Single Payment)',
       brand: 'AI Marketplace',
       price: 119.00,
@@ -16,18 +28,32 @@ export const Channel3Deals: React.FC = () => {
       merchantName: 'Channel3 Software Deals',
       buyUrl: 'https://trychannel3.com',
       category: 'AI & ML',
+      recurringOrLifetime: 'ANNUAL',
       savingVersusRecurringYearly: 121.00,
     },
     {
-      id: 'ch3_sample_2',
-      title: 'Affinity Designer Lifetime License (Zero Monthly SaaS)',
-      brand: 'Serif Labs',
-      price: 69.99,
+      id: 'ch3_sample_3',
+      title: 'Local Edge AI Accelerator Card (One-time Hardware Purchase)',
+      brand: 'NeuralTech',
+      price: 189.99,
       currency: 'USD',
-      merchantName: 'Channel3 Partner Network',
+      merchantName: 'Retail Partner',
       buyUrl: 'https://trychannel3.com',
-      category: 'Design & Creative',
-      savingVersusRecurringYearly: 110.00,
+      category: 'AI & ML',
+      recurringOrLifetime: 'LIFETIME',
+      savingVersusRecurringYearly: 290.00,
+    },
+    {
+      id: 'ch3_sample_4',
+      title: 'Tabnine Local AI Code Completion (Perpetual License)',
+      brand: 'Tabnine',
+      price: 144.00,
+      currency: 'USD',
+      merchantName: 'Tabnine Deals',
+      buyUrl: 'https://tabnine.com',
+      category: 'Developer Tools',
+      recurringOrLifetime: 'ANNUAL',
+      savingVersusRecurringYearly: 84.00,
     },
   ]);
   const [loading, setLoading] = useState(false);
@@ -41,10 +67,10 @@ export const Channel3Deals: React.FC = () => {
       const res = await fetch('/api/channel3/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query: query.trim() }),
       });
       const data = await res.json();
-      if (data.results) {
+      if (data.results && Array.isArray(data.results)) {
         setProducts(data.results);
       }
     } catch {
@@ -54,71 +80,93 @@ export const Channel3Deals: React.FC = () => {
   };
 
   return (
-    <div className="bg-[#111215] border border-[#23252a] rounded-lg p-5">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 pb-3 border-b border-[#23252a]">
-        <div>
-          <h3 className="text-sm font-semibold text-white">SaaS Perpetual Replacements</h3>
-          <p className="text-xs text-[#8c9099]">Channel3 Universal Product Graph (100M+ catalog across 25k merchants)</p>
+    <div className="w-full space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-3xl bg-[#1c1c1e] border border-white/[0.08] shadow-2xl">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="p-1.5 rounded-lg bg-[#7c3aed]/20 text-[#a855f7] border border-[#7c3aed]/30">
+              <Sparkles className="w-4 h-4" />
+            </span>
+            <h2 className="text-lg font-semibold text-white tracking-tight">Channel3 Perpetual Market</h2>
+            <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-white/[0.06] text-[#86868b] border border-white/[0.08]">
+              Product Graph
+            </span>
+          </div>
+          <p className="text-xs text-[#86868b] max-w-xl">
+            Live catalog across 25,000+ digital merchants and brands. Discover verified lifetime and single-payment software licenses that replace recurring monthly subscription drains.
+          </p>
         </div>
 
-        <form onSubmit={handleSearch} className="flex gap-2">
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search deals..."
-            className="px-2.5 py-1 bg-[#17181c] border border-[#23252a] rounded text-xs text-white placeholder-[#5e626b] focus:outline-none focus:border-[#38bdf8] w-44"
-          />
+        <form onSubmit={handleSearch} className="flex items-center gap-2">
+          <div className="relative">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search software, tools..."
+              className="w-56 bg-[#16171b] border border-white/[0.1] rounded-xl px-3 py-2 text-xs text-white placeholder-[#5e626b] focus:outline-none focus:border-[#7c3aed] transition-colors"
+            />
+          </div>
           <button
             type="submit"
             disabled={loading}
-            className="px-2.5 py-1 bg-[#23252a] hover:bg-[#32353d] disabled:opacity-40 text-white rounded text-xs font-medium transition-colors"
+            className="px-4 py-2 rounded-xl bg-[#7c3aed] hover:bg-[#6d28d9] text-white text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer shadow-md shadow-[#7c3aed]/20"
           >
-            {loading ? 'Searching...' : 'Search'}
+            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+            <span>Search</span>
           </button>
         </form>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {products.map((p) => (
           <div
             key={p.id}
-            className="bg-[#17181c] border border-[#23252a] rounded p-3.5 flex flex-col justify-between hover:border-[#32353d] transition-colors"
+            className="p-5 rounded-2xl bg-[#1c1c1e] border border-white/[0.08] hover:border-white/[0.16] transition-all flex flex-col justify-between group shadow-lg"
           >
-            <div>
-              <div className="flex items-center justify-between text-xs mb-1">
-                <span className="text-[11px] font-mono text-[#8c9099] uppercase">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-mono tracking-wider uppercase text-[#86868b] px-2 py-0.5 rounded bg-white/[0.04] border border-white/[0.06]">
                   {p.category}
                 </span>
                 {p.savingVersusRecurringYearly && (
-                  <span className="text-[#22c55e] font-mono text-xs">
+                  <span className="text-xs font-mono font-medium text-[#30d158] flex items-center gap-1">
+                    <TrendingDown className="w-3.5 h-3.5" />
                     Save ~${p.savingVersusRecurringYearly}/yr
                   </span>
                 )}
               </div>
 
-              <h4 className="text-xs font-medium text-white mb-0.5">{p.title}</h4>
-              <div className="text-[11px] text-[#5e626b] mb-3">
-                {p.brand} · {p.merchantName}
+              <div>
+                <h3 className="text-sm font-semibold text-white group-hover:text-white transition-colors">
+                  {p.title}
+                </h3>
+                <div className="text-xs text-[#86868b] mt-1 flex items-center gap-2">
+                  <span>{p.brand}</span>
+                  <span>•</span>
+                  <span>{p.merchantName}</span>
+                </div>
               </div>
             </div>
 
-            <div className="pt-2 border-t border-[#23252a] flex items-center justify-between">
+            <div className="mt-5 pt-4 border-t border-white/[0.08] flex items-center justify-between">
               <div>
-                <span className="text-sm font-semibold font-mono text-white">
+                <span className="text-base font-semibold font-mono text-white tabular-nums">
                   ${p.price.toFixed(2)}
                 </span>
-                <span className="text-[10px] text-[#5e626b] ml-1">one-time</span>
+                <span className="text-[10px] font-mono text-[#a855f7] ml-1.5 uppercase">
+                  {p.recurringOrLifetime ? p.recurringOrLifetime.toLowerCase() : 'one-time'}
+                </span>
               </div>
 
               <a
                 href={p.buyUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-[#8c9099] hover:text-white bg-[#111215] hover:bg-[#23252a] border border-[#23252a] rounded transition-colors"
+                className="px-3.5 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-xs font-medium text-white transition-all flex items-center gap-1.5 active:scale-[0.98]"
               >
-                <span>Offer</span>
-                <ExternalLink className="w-3 h-3 text-[#5e626b]" />
+                <span>View Deal</span>
+                <ArrowUpRight className="w-3.5 h-3.5 text-[#86868b] group-hover:text-white" />
               </a>
             </div>
           </div>

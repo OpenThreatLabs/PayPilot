@@ -337,11 +337,36 @@ Guidelines:
       },
     ];
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+    async function generateWithFallback(callConfig: { contents: any[]; config?: any }) {
+      const candidateModels = [
+        'gemini-3.5-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-3.5-flash',
+        'gemini-flash-latest'
+      ];
+      let lastError: any = null;
+      for (const m of candidateModels) {
+        try {
+          return await ai.models.generateContent({
+            ...callConfig,
+            model: m,
+          });
+        } catch (err: any) {
+          lastError = err;
+          const s = String(err?.status || err?.code || err?.message || '');
+          if (s.includes('503') || s.includes('UNAVAILABLE') || s.includes('429') || s.includes('high demand')) {
+            continue;
+          }
+          throw err;
+        }
+      }
+      throw lastError;
+    }
+
+    const response = await generateWithFallback({
       contents: [
         ...messages.map(m => ({
-          role: m.role,
+          role: m.role === 'assistant' ? 'model' : 'user',
           parts: [{ text: m.content }]
         }))
       ],
@@ -426,16 +451,15 @@ Guidelines:
         }
       }
 
-      const followUp = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+      const followUp = await generateWithFallback({
         contents: [
           ...messages.map(m => ({
-            role: m.role,
+            role: m.role === 'assistant' ? 'model' : 'user',
             parts: [{ text: m.content }]
           })),
           {
-            role: 'assistant',
-            parts: [{ text: `I invoked tools: ${toolCallHistory.map(t => t.toolName).join(', ')}. Summarizing results for user.` }]
+            role: 'user',
+            parts: [{ text: `Tool output results: ${toolCallHistory.map(t => t.toolName).join(', ')}. Summarizing results for user.` }]
           }
         ],
         config: {

@@ -5,10 +5,11 @@ import {
   Plus, 
   LayoutDashboard, 
   CreditCard, 
-  ShieldAlert 
+  ShieldAlert,
+  Sparkles
 } from 'lucide-react';
 
-export type NavTab = 'DASHBOARD' | 'SUBSCRIPTIONS' | 'VIGIL';
+export type NavTab = 'DASHBOARD' | 'SUBSCRIPTIONS' | 'VIGIL' | 'CHANNEL3';
 
 interface LeftSidebarProps {
   activeTab: NavTab;
@@ -27,6 +28,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
     { id: 'DASHBOARD' as NavTab, label: 'Overview', icon: LayoutDashboard },
     { id: 'SUBSCRIPTIONS' as NavTab, label: 'Subscriptions', icon: CreditCard },
     { id: 'VIGIL' as NavTab, label: 'Vigil', icon: ShieldAlert },
+    { id: 'CHANNEL3' as NavTab, label: 'Market Deals', icon: Sparkles },
   ];
 
   return (

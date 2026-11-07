@@ -9,6 +9,7 @@ import { SpendMetricCards } from '@/components/SpendMetricCards';
 import { SubscriptionsTableView, SubscriptionFilterType } from '@/components/SubscriptionsTableView';
 import { AddSubscriptionModal } from '@/components/AddSubscriptionModal';
 import { VigilChatView } from '@/components/VigilChatView';
+import { Channel3Deals } from '@/components/Channel3Deals';
 import { INITIAL_SUBSCRIPTIONS } from '@/lib/initialData';
 import { Subscription } from '@/types';
 import { toast } from 'sonner';
@@ -255,6 +256,12 @@ export default function Home() {
                 />
               </div>
             )}
+
+            {activeTab === 'CHANNEL3' && (
+              <div className="w-full">
+                <Channel3Deals />
+              </div>
+            )}
           </div>
         </main>
       </div>
@@ -272,6 +279,7 @@ export default function Home() {
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
         onAdd={handleAddSubscription}
+        currencyCode={currency.code}
         currencySymbol={currency.symbol}
       />
     </div>

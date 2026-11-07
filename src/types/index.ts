@@ -27,6 +27,7 @@ export interface Subscription {
   usageScore: number;
   redundancyGroup?: string;
   planName: string;
+  logoUrl?: string;
   dataSource?: SubscriptionDataSource;
   approveUrl?: string;
   paypalPlanId?: string;

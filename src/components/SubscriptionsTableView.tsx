@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { Subscription } from '@/types';
 import { Search, Pause, X, Play, Loader2, FileSpreadsheet, ExternalLink, RefreshCw, CreditCard } from 'lucide-react';
+import { CompanyLogo } from '@/components/CompanyLogo';
 import { PowerAuditModal } from '@/components/PowerAuditModal';
 import { toast } from 'sonner';
 
@@ -183,27 +184,32 @@ export function SubscriptionsTableView({
                     className="hover:bg-white/[0.02] transition-colors group select-none"
                   >
                     <td className="py-4 px-5">
-                      <div className="font-medium text-white text-[13px] flex items-center gap-2">
-                        <span>{sub.name}</span>
-                        {sub.dataSource === 'PAYPAL_SANDBOX' && (
-                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#0071e3]/10 text-[#2997ff] border border-[#0071e3]/20 flex items-center gap-1">
-                            <CreditCard className="w-2.5 h-2.5" />
-                            PayPal Sandbox
-                          </span>
-                        )}
-                        {sub.dataSource === 'DEMO_SEED' && (
-                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.05] text-[#86868b] border border-white/[0.08]">
-                            Demo Seed
-                          </span>
-                        )}
-                        {sub.priceCreepRisk && sub.priceCreepRisk.percentIncrease > 0 && (
-                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">
-                            +{sub.priceCreepRisk.percentIncrease}%
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] text-[#86868b] mt-0.5">
-                        {sub.vendor} • {sub.planName}
+                      <div className="flex items-center gap-3">
+                        <CompanyLogo name={sub.name} vendor={sub.vendor} size={36} />
+                        <div className="min-w-0">
+                          <div className="font-medium text-white text-[13px] flex items-center gap-2 flex-wrap">
+                            <span className="truncate">{sub.name}</span>
+                            {sub.dataSource === 'PAYPAL_SANDBOX' && (
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#0071e3]/10 text-[#2997ff] border border-[#0071e3]/20 flex items-center gap-1">
+                                <CreditCard className="w-2.5 h-2.5" />
+                                PayPal Sandbox
+                              </span>
+                            )}
+                            {sub.dataSource === 'DEMO_SEED' && (
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.05] text-[#86868b] border border-white/[0.08]">
+                                Demo Seed
+                              </span>
+                            )}
+                            {sub.priceCreepRisk && sub.priceCreepRisk.percentIncrease > 0 && (
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">
+                                +{sub.priceCreepRisk.percentIncrease}%
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-[#86868b] mt-0.5 truncate">
+                            {sub.vendor} • {sub.planName}
+                          </div>
+                        </div>
                       </div>
                     </td>
 
