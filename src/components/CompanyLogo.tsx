@@ -115,14 +115,17 @@ export function CompanyLogo({ name, vendor, size = 32, className = '' }: Company
   const colorIndex = Math.abs(name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PALETTE.length;
   const colorStyle = PALETTE[colorIndex];
 
+  const squircleRadius = Math.round(size * 0.28);
+
   return (
     <div
-      className={`relative shrink-0 rounded-xl overflow-hidden flex items-center justify-center select-none border ${className}`}
+      className={`relative shrink-0 overflow-hidden flex items-center justify-center select-none border border-white/[0.1] bg-[#1d1d1f]/80 shadow-[0_2px_8px_rgba(0,0,0,0.36),inset_0_1px_0_rgba(255,255,255,0.12)] transition-transform duration-140 ease-out ${className}`}
       style={{
         width: size,
         height: size,
         minWidth: size,
         minHeight: size,
+        borderRadius: `${squircleRadius}px`,
       }}
     >
       {!loadFailed ? (
@@ -132,12 +135,15 @@ export function CompanyLogo({ name, vendor, size = 32, className = '' }: Company
           alt={name}
           width={size}
           height={size}
-          className="w-full h-full object-contain p-1 rounded-xl bg-white/[0.04]"
+          className="w-full h-full object-contain p-1.5 transition-opacity duration-150"
           loading="lazy"
           onError={() => setLoadFailed(true)}
         />
       ) : (
-        <div className={`w-full h-full bg-gradient-to-br ${colorStyle} flex items-center justify-center font-semibold text-xs tracking-tight font-sans`}>
+        <div 
+          className={`w-full h-full bg-gradient-to-br ${colorStyle} flex items-center justify-center font-semibold text-xs tracking-tight font-sans shadow-inner`}
+          style={{ borderRadius: `${squircleRadius}px` }}
+        >
           {initial}
         </div>
       )}

@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Subscription } from '@/types';
-import { Search, Pause, X, Play, Loader2, FileSpreadsheet, ExternalLink, RefreshCw, CreditCard } from 'lucide-react';
+import { Search, Pause, X, Play, Loader2, FileSpreadsheet, ExternalLink, RefreshCw, CreditCard, Trash2 } from 'lucide-react';
 import { CompanyLogo } from '@/components/CompanyLogo';
 import { PowerAuditModal } from '@/components/PowerAuditModal';
 import { BASELINE_EXCHANGE_RATES, convertAmount } from '@/lib/currency';
@@ -32,6 +32,7 @@ interface SubscriptionsTableViewProps {
   rates?: Record<string, number>;
   initialFilter?: SubscriptionFilterType;
   onExecuteAction: (action: 'CANCEL' | 'SUSPEND' | 'ACTIVATE', id: string, agreementId: string) => Promise<void>;
+  onDeleteSubscription?: (id: string, agreementId: string) => void;
   onSyncStatus?: (subscriptionId: string, agreementId: string) => Promise<void>;
   onUpdateSubscriptions?: (subs: Subscription[]) => void;
 }
@@ -43,6 +44,7 @@ export function SubscriptionsTableView({
   rates = BASELINE_EXCHANGE_RATES,
   initialFilter = 'ALL',
   onExecuteAction,
+  onDeleteSubscription,
   onSyncStatus,
   onUpdateSubscriptions,
 }: SubscriptionsTableViewProps) {
@@ -353,28 +355,64 @@ export function SubscriptionsTableView({
                             ? 'bg-[#30d158]/10 text-[#30d158] border-[#30d158]/20'
                             : sub.status === 'SUSPENDED'
                             ? 'bg-[#ff9f0a]/10 text-[#ff9f0a] border-[#ff9f0a]/20'
-                            : sub.status === 'APPROVAL_PENDING'
+                            : (sub.status === 'APPROVAL_PENDING' || sub.status === 'PENDING')
                             ? 'bg-[#2997ff]/10 text-[#2997ff] border-[#2997ff]/20'
                             : 'bg-white/[0.05] text-[#86868b] border-white/[0.08]'
                         }`}
                       >
-                        {sub.status}
+                        {sub.status === 'APPROVAL_PENDING' ? 'PENDING' : sub.status}
                       </span>
                     </td>
 
                     <td className="py-4 px-5 text-right">
                       {isCancelled ? (
-                        <span className="text-[11px] text-[#86868b]">Cancelled</span>
-                      ) : isPending && sub.approveUrl ? (
-                        <a
-                          href={sub.approveUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0071e3] hover:bg-[#0077ed] text-white text-[11px] font-semibold transition-all active:scale-[0.96]"
-                        >
-                          <span>Approve</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
+                        <div className="flex items-center justify-end gap-2">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border bg-white/[0.04] text-[#86868b] border-white/[0.08]">
+                            Cancelled
+                          </span>
+                          {onDeleteSubscription && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm(`Permanently remove ${sub.name} from PayPilot?`)) {
+                                  onDeleteSubscription(sub.id, sub.paypalAgreementId);
+                                  toast.success(`Removed ${sub.name} permanently`);
+                                }
+                              }}
+                              title="Delete permanently from vault"
+                              className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-all duration-150 active:scale-[0.92] cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ) : isPending ? (
+                        <div className="flex items-center justify-end gap-1.5">
+                          {sub.approveUrl && (
+                            <a
+                              href={sub.approveUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0071e3] hover:bg-[#0077ed] text-white text-[11px] font-semibold transition-all duration-150 active:scale-[0.96] shadow-sm shadow-[#0071e3]/30"
+                            >
+                              <span>Approve</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                          <button
+                            type="button"
+                            disabled={isLoading}
+                            onClick={() => handleAction('CANCEL', sub)}
+                            className="px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[11px] font-medium transition-all duration-150 active:scale-[0.96] flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                          >
+                            {isLoading ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <X className="w-3 h-3" />
+                            )}
+                            <span>Cancel</span>
+                          </button>
+                        </div>
                       ) : (
                         <div className="flex items-center justify-end gap-1.5">
                           {sub.status === 'ACTIVE' && (

@@ -1,3 +1,8 @@
+export const PAYPAL_SUPPORTED_BILLING_CURRENCIES = new Set([
+  'USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CHF', 'HKD', 'SGD', 'SEK', 
+  'NOK', 'DKK', 'PLN', 'HUF', 'CZK', 'ILS', 'MXN', 'BRL', 'MYR', 'PHP', 
+  'TWD', 'THB', 'NZD'
+]);
 interface PayPalAuthResponse {
   access_token: string;
   token_type: string;
@@ -57,6 +62,7 @@ export async function getPayPalAccessToken(forceRefresh = false): Promise<string
 
 export interface CreateSubscriptionParams {
   name: string;
+  subscriberEmail?: string;
   vendor?: string;
   description?: string;
   amount: number;
@@ -80,8 +86,12 @@ export async function createPayPalSubscription(
   params: CreateSubscriptionParams
 ): Promise<CreateSubscriptionResult> {
   const token = await getPayPalAccessToken();
-  const currency = params.currency || 'USD';
-  const amountStr = params.amount.toFixed(2);
+  let currency = (params.currency || 'USD').toUpperCase();
+  let amountStr = params.amount.toFixed(2);
+
+  if (!PAYPAL_SUPPORTED_BILLING_CURRENCIES.has(currency)) {
+    currency = 'USD';
+  }
 
   if (token === 'mock_sandbox_access_token_paypilot') {
     const simId = `I-PP-SBX-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -183,15 +193,13 @@ export async function createPayPalSubscription(
     body: JSON.stringify({
       plan_id: planId,
       quantity: '1',
-      subscriber: {
-        name: {
-          given_name: 'Sandbox',
-          surname: 'Tester',
+      ...(params.subscriberEmail ? {
+        subscriber: {
+          email_address: params.subscriberEmail,
         },
-        email_address: 'sandbox-buyer@paypilot.internal',
-      },
+      } : {}),
       application_context: {
-        brand_name: 'PayPilot Autonomous Guardian',
+        brand_name: 'PayPilot',
         locale: 'en-US',
         shipping_preference: 'NO_SHIPPING',
         user_action: 'SUBSCRIBE_NOW',
@@ -266,8 +274,51 @@ export async function getPayPalSubscriptionDetails(subscriptionId: string) {
   }
 
   const data = await response.json();
+
+  let planDetails: Record<string, any> | null = null;
+  let productName: string | null = null;
+  if (data.plan_id) {
+    try {
+      const planRes = await fetch(`${PAYPAL_API_BASE}/v1/billing/plans/${data.plan_id}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (planRes.ok) {
+        planDetails = await planRes.json();
+        if (planDetails && planDetails.product_id) {
+          const prodRes = await fetch(`${PAYPAL_API_BASE}/v1/catalogs/products/${planDetails.product_id}`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          if (prodRes.ok) {
+            const prodData = await prodRes.json();
+            productName = prodData.name;
+          }
+        }
+      }
+    } catch {
+    }
+  }
+
+  const cycles = planDetails?.billing_cycles;
+  const regularCycle = Array.isArray(cycles) ? cycles.find((c: { tenure_type: string }) => c.tenure_type === 'REGULAR') || cycles[0] : null;
+  const fixedPrice = regularCycle?.pricing_scheme?.fixed_price;
+  const intervalUnit = regularCycle?.frequency?.interval_unit;
+
   return {
     ...data,
+    planDetails,
+    productName: productName || planDetails?.name,
+    planName: planDetails?.name,
+    amount: fixedPrice ? parseFloat(fixedPrice.value) : undefined,
+    currency: fixedPrice?.currency_code,
+    billingCycle: intervalUnit === 'YEAR' ? 'YEARLY' : intervalUnit === 'QUARTER' ? 'QUARTERLY' : 'MONTHLY',
     dataSource: 'PAYPAL_SANDBOX',
     mocked: false,
   };

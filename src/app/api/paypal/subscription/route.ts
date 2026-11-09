@@ -26,7 +26,7 @@ export async function POST(req: Request) {
 
     // Handle Subscription Creation
     if (action === 'CREATE') {
-      const { name, amount, billingCycle, vendor, currency, returnUrl, cancelUrl } = body;
+      const { name, amount, billingCycle, vendor, currency, returnUrl, cancelUrl, subscriberEmail } = body;
 
       if (!name || typeof amount !== 'number' || amount <= 0) {
         return NextResponse.json(
@@ -45,6 +45,7 @@ export async function POST(req: Request) {
         billingCycle: cycle,
         returnUrl,
         cancelUrl,
+        subscriberEmail: typeof subscriberEmail === 'string' ? sanitizeUserText(subscriberEmail, 120) : undefined,
       });
 
       return NextResponse.json(createResult);

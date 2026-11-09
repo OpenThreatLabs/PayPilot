@@ -3,12 +3,14 @@
 import React from 'react';
 import { Subscription } from '@/types';
 import { BASELINE_EXCHANGE_RATES, convertAmount } from '@/lib/currency';
+import { UserProfile } from '@/lib/userProfile';
 
 interface SpendHeaderProps {
   subscriptions: Subscription[];
   currencySymbol?: string;
   currencyCode?: string;
   rates?: Record<string, number>;
+  profile?: UserProfile | null;
 }
 
 export function SpendHeader({
@@ -16,6 +18,7 @@ export function SpendHeader({
   currencySymbol = '$',
   currencyCode = 'USD',
   rates = BASELINE_EXCHANGE_RATES,
+  profile,
 }: SpendHeaderProps) {
   const activeSubs = subscriptions.filter((s) => s.status === 'ACTIVE');
 
@@ -28,14 +31,21 @@ export function SpendHeader({
 
   const annualTotal = monthlyTotal * 12;
 
+  const firstName = profile ? profile.name.trim().split(' ')[0] : null;
+
   return (
     <div className="w-full mb-8">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-6 border-b border-white/[0.08]">
         <div>
           <div className="flex items-center gap-2 mb-2">
             <span className="text-[12px] font-medium tracking-wider uppercase text-[#86868b]">
-              Total Commitments
+              {firstName ? `${firstName}'s Commitments` : 'Total Commitments'}
             </span>
+            {profile && (
+              <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-[#0071e3]/15 text-[#2997ff] border border-[#0071e3]/25">
+                {profile.email}
+              </span>
+            )}
           </div>
 
           <div className="flex items-baseline gap-3">

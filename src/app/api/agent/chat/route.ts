@@ -23,6 +23,11 @@ interface ChatRequestBody {
   messages: { role: 'user' | 'assistant' | 'system'; content: string }[];
   subscriptions: Subscription[];
   currency?: string;
+  userProfile?: {
+    name?: string;
+    email?: string;
+    paypalMerchantId?: string;
+  } | null;
 }
 
 export async function POST(req: Request) {
@@ -42,7 +47,7 @@ export async function POST(req: Request) {
     }
 
     const body: ChatRequestBody = await req.json();
-    const { messages = [], subscriptions = [] } = body;
+    const { messages = [], subscriptions = [], userProfile } = body;
 
     const latestUserMessage = sanitizeUserText(
       messages.filter((m) => m.role === 'user').slice(-1)[0]?.content || '',
@@ -332,8 +337,14 @@ export async function POST(req: Request) {
 
     const ai = new GoogleGenAI({ apiKey });
 
+    const userAccountInfo = userProfile && userProfile.name 
+      ? `User Account: ${userProfile.name} (${userProfile.email || 'No email'}), Linked PayPal Payer: ${userProfile.paypalMerchantId || 'sandbox-payer-default'}`
+      : 'User Account: Local Anonymous Session (Not signed in)';
+
     const systemInstruction = `You are Vigil, PayPilot's Autonomous Financial Guardian & Subscription Copilot.
 You assist individuals and small businesses in managing recurring subscriptions, cutting duplicate waste, finding cheaper software deals, safely preparing PayPal billing changes, and researching live verified subscription prices.
+
+${userAccountInfo}
 
 Active User Subscriptions:
 ${activeList}

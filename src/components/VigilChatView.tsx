@@ -23,6 +23,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { BASELINE_EXCHANGE_RATES, convertAmount } from '@/lib/currency';
+import { UserProfile } from '@/lib/userProfile';
 import { toast } from 'sonner';
 
 interface VigilChatViewProps {
@@ -30,6 +31,7 @@ interface VigilChatViewProps {
   currencySymbol?: string;
   currencyCode?: string;
   rates?: Record<string, number>;
+  profile?: UserProfile | null;
   onExecuteAction: (action: 'CANCEL' | 'SUSPEND', id: string, agreementId: string) => Promise<void>;
 }
 
@@ -48,6 +50,7 @@ export function VigilChatView({
   currencySymbol = '$',
   currencyCode = 'USD',
   rates = BASELINE_EXCHANGE_RATES,
+  profile,
   onExecuteAction,
 }: VigilChatViewProps) {
   const [messages, setMessages] = useState<AgentChatMessage[]>([
@@ -110,6 +113,7 @@ export function VigilChatView({
           })),
           subscriptions,
           currency: currencyCode,
+          userProfile: profile,
         }),
       });
 

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import { 
   Search, 
   Bell, 
@@ -11,10 +12,14 @@ import {
   ShieldCheck, 
   Settings, 
   LogOut,
+  Database,
   PanelLeftClose,
   PanelLeft
 } from 'lucide-react';
 import { ExchangeRateData } from '@/lib/currency';
+import { UserProfile } from '@/lib/userProfile';
+import { Subscription } from '@/types';
+import { NotificationCenter } from '@/components/NotificationCenter';
 import { toast } from 'sonner';
 
 export interface CurrencyOption {
@@ -56,10 +61,6 @@ export const ALL_CURRENCIES: CurrencyOption[] = [
   { code: 'IDR', symbol: 'Rp', name: 'Indonesian Rupiah', countries: ['indonesia', 'id'] },
   { code: 'MYR', symbol: 'RM', name: 'Malaysian Ringgit', countries: ['malaysia', 'my'] },
   { code: 'PHP', symbol: '₱', name: 'Philippine Peso', countries: ['philippines', 'ph'] },
-  { code: 'CZK', symbol: 'Kč', name: 'Czech Koruna', countries: ['czech republic', 'czechia', 'cz'] },
-  { code: 'ILS', symbol: '₪', name: 'Israeli New Shekel', countries: ['israel', 'il'] },
-  { code: 'CLP', symbol: 'CLP$', name: 'Chilean Peso', countries: ['chile', 'cl'] },
-  { code: 'COP', symbol: 'COL$', name: 'Colombian Peso', countries: ['colombia', 'co'] },
   { code: 'EGP', symbol: 'E£', name: 'Egyptian Pound', countries: ['egypt', 'eg'] },
   { code: 'VND', symbol: '₫', name: 'Vietnamese Dong', countries: ['vietnam', 'vn'] },
   { code: 'DKK', symbol: 'kr', name: 'Danish Krone', countries: ['denmark', 'dk'] },
@@ -134,307 +135,282 @@ export const ALL_CURRENCIES: CurrencyOption[] = [
 
 interface TopNavProps {
   onSearchClick?: () => void;
+  currency?: CurrencyOption;
   onSelectCurrency?: (currency: CurrencyOption) => void;
   ratesData?: ExchangeRateData;
   sidebarCollapsed: boolean;
   onToggleSidebar: () => void;
+  profile?: UserProfile | null;
+  subscriptions?: Subscription[];
+  onOpenProfile?: (tab?: 'PROFILE' | 'PAYPAL' | 'DATA') => void;
+  onNavigateTab?: (tab: 'DASHBOARD' | 'SUBSCRIPTIONS' | 'VIGIL') => void;
+  onSignOut?: () => void;
 }
 
 export const TopNav: React.FC<TopNavProps> = ({
   onSearchClick,
+  currency,
   onSelectCurrency,
   ratesData,
   sidebarCollapsed,
   onToggleSidebar,
+  profile,
+  subscriptions = [],
+  onOpenProfile,
+  onNavigateTab,
+  onSignOut,
 }) => {
-  const [selectedCurrency, setSelectedCurrency] = useState<CurrencyOption>(POPULAR_CURRENCIES[0]);
-  const [isCurrencyOpen, setIsCurrencyOpen] = useState(false);
-  const [currencySearch, setCurrencySearch] = useState('');
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
-
-  const currencyRef = useRef<HTMLDivElement>(null);
-  const profileRef = useRef<HTMLDivElement>(null);
-  const notifRef = useRef<HTMLDivElement>(null);
+  const [selectedCurrency, setSelectedCurrency] = useState<CurrencyOption>(currency || POPULAR_CURRENCIES[0]);
 
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
+    if (currency) {
+      setSelectedCurrency(currency);
+    }
+  }, [currency]);
+
+  const [isCurrencyOpen, setIsCurrencyOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+
+  const currencyRef = useRef<HTMLDivElement>(null);
+  const notificationsRef = useRef<HTMLDivElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
       if (currencyRef.current && !currencyRef.current.contains(event.target as Node)) {
         setIsCurrencyOpen(false);
-        setCurrencySearch('');
+      }
+      if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
+        setIsNotificationsOpen(false);
       }
       if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
         setIsProfileOpen(false);
       }
-      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
-        setIsNotificationOpen(false);
-      }
-    }
+    };
+
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
 
-  const handleCurrencySelect = (curr: CurrencyOption) => {
-    setSelectedCurrency(curr);
-    setIsCurrencyOpen(false);
-    setCurrencySearch('');
-    if (onSelectCurrency) {
-      onSelectCurrency(curr);
+  useEffect(() => {
+    if (isCurrencyOpen) {
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 50);
+    } else {
+      setSearchQuery('');
     }
-    toast.info(`Currency set to ${curr.code} (${curr.symbol})`);
-  };
+  }, [isCurrencyOpen]);
 
   const filteredCurrencies = useMemo(() => {
-    if (!currencySearch.trim()) {
-      return null;
-    }
-    const q = currencySearch.toLowerCase().trim();
-    return ALL_CURRENCIES.filter((c) => {
-      const codeMatch = c.code.toLowerCase().includes(q);
-      const nameMatch = c.name.toLowerCase().includes(q);
-      const countryMatch = c.countries.some((country) => country.includes(q) || q.includes(country));
-      return codeMatch || nameMatch || countryMatch;
-    });
-  }, [currencySearch]);
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return ALL_CURRENCIES;
+
+    return ALL_CURRENCIES.filter(curr => 
+      curr.code.toLowerCase().includes(query) ||
+      curr.name.toLowerCase().includes(query) ||
+      curr.symbol.toLowerCase().includes(query) ||
+      curr.countries.some(country => country.includes(query))
+    );
+  }, [searchQuery]);
+
+  const handleSelect = (curr: CurrencyOption) => {
+    setSelectedCurrency(curr);
+    setIsCurrencyOpen(false);
+    onSelectCurrency?.(curr);
+    toast.success(`Currency changed to ${curr.code} (${curr.symbol})`);
+  };
 
   return (
-    <header className="sticky top-0 z-30 w-full h-16 bg-transparent border-b border-transparent flex items-center justify-between px-8 select-none transition-colors">
-      <div className="flex items-center gap-3">
+    <header className="h-16 border-b border-white/[0.04] bg-[#000000]/60 backdrop-blur-xl sticky top-0 z-40 px-6 flex items-center justify-between select-none">
+      <div className="flex items-center gap-4">
         <button
           type="button"
           onClick={onToggleSidebar}
-          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className="p-2 rounded-xl text-[#86868b] hover:text-[#f5f5f7] bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors"
+          className="text-[#86868b] hover:text-white transition-colors cursor-pointer p-1.5 rounded-lg hover:bg-white/[0.05]"
+          title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {sidebarCollapsed ? (
-            <PanelLeft className="w-4 h-4" />
+            <PanelLeft className="w-5 h-5 stroke-[1.8]" />
           ) : (
-            <PanelLeftClose className="w-4 h-4" />
+            <PanelLeftClose className="w-5 h-5 stroke-[1.8]" />
           )}
         </button>
 
-        <div className="flex items-center gap-3 cursor-pointer ml-1">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-b from-[#2997ff] to-[#0071e3] flex items-center justify-center text-white shadow-sm shadow-[#0071e3]/30">
-            <span className="font-semibold text-sm tracking-tight">P</span>
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#0071e3] to-[#2997ff] flex items-center justify-center shadow-lg shadow-[#0071e3]/20">
+            <svg
+              className="w-4 h-4 text-white fill-current"
+              viewBox="0 0 24 24"
+            >
+              <path d="M20.067 8.478c.492.88.556 2.014.3 3.327-.74 3.806-3.27 5.922-7.14 5.922h-1.892a.63.63 0 0 0-.623.535l-.893 5.65a.63.63 0 0 1-.623.532H4.895a.63.63 0 0 1-.623-.728l3.414-21.564a.63.63 0 0 1 .623-.532h5.795c3.21 0 5.485 1.547 5.963 4.858z" />
+            </svg>
           </div>
-
-          <div
-            className={`overflow-hidden transition-all duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] ${
-              sidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[140px] opacity-100'
-            }`}
-          >
-            <span className="font-semibold text-base tracking-tight text-[#f5f5f7] whitespace-nowrap">
-              PayPilot
+          <span className="font-semibold text-base tracking-tight text-white flex items-center gap-1.5">
+            PayPilot
+            <span className="text-[10px] font-mono font-medium px-1.5 py-0.2 rounded-full bg-white/[0.08] text-[#86868b]">
+              v1.0
             </span>
-          </div>
+          </span>
         </div>
       </div>
 
       <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onSearchClick}
-          className="hidden md:flex items-center gap-2.5 px-3.5 py-2 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-xs text-[#86868b] hover:text-[#f5f5f7] transition-all"
-        >
-          <Search className="w-4 h-4" />
-          <span>Search...</span>
-          <kbd className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.08] text-[#86868b]">
-            ⌘K
-          </kbd>
-        </button>
-
         <div className="relative" ref={currencyRef}>
           <button
             type="button"
             onClick={() => setIsCurrencyOpen(!isCurrencyOpen)}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-medium text-[#f5f5f7] bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-all active:scale-95"
+            className="h-9 px-3 rounded-full flex items-center gap-2 text-xs font-medium text-[#f5f5f7] bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition-all active:scale-95 cursor-pointer shadow-xs"
           >
-            <span className="text-[#86868b] font-mono">{selectedCurrency.symbol}</span>
+            <span className="font-semibold text-[#2997ff]">{selectedCurrency.symbol}</span>
             <span>{selectedCurrency.code}</span>
-            <ChevronDown className={`w-3.5 h-3.5 text-[#86868b] transition-transform duration-150 ${isCurrencyOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`w-3.5 h-3.5 text-[#86868b] transition-transform duration-200 ${isCurrencyOpen ? 'rotate-180' : ''}`} />
           </button>
 
           {isCurrencyOpen && (
-            <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-[#141519]/95 backdrop-blur-2xl border border-white/[0.12] shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-100 origin-top-right">
-              <div className="relative mb-2">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#86868b]" />
-                <input
-                  type="text"
-                  autoFocus
-                  value={currencySearch}
-                  onChange={(e) => setCurrencySearch(e.target.value)}
-                  placeholder="Search currency..."
-                  className="w-full pl-8 pr-3 py-1.5 bg-white/[0.05] border border-white/[0.08] rounded-xl text-xs text-[#f5f5f7] placeholder-[#86868b] focus:outline-none focus:border-[#2997ff]"
-                />
+            <div className="absolute right-0 mt-2 w-72 rounded-2xl bg-[#1d1d1f]/95 backdrop-blur-3xl border border-white/[0.12] shadow-2xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-100 origin-top-right">
+              <div className="p-3 border-b border-white/[0.08]">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-[#86868b] absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search currency or country..."
+                    className="w-full bg-white/[0.06] border border-white/[0.08] rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-[#86868b] focus:outline-none focus:border-[#2997ff]/50 transition-colors"
+                  />
+                </div>
               </div>
 
-              {!filteredCurrencies ? (
-                <div className="space-y-0.5">
-                  {POPULAR_CURRENCIES.map((curr) => {
+              <div className="max-h-72 overflow-y-auto p-1.5 space-y-0.5 custom-scrollbar">
+                {filteredCurrencies.length === 0 ? (
+                  <div className="p-4 text-center text-xs text-[#86868b]">
+                    No currencies found matching &quot;{searchQuery}&quot;
+                  </div>
+                ) : (
+                  filteredCurrencies.map((curr) => {
                     const isSelected = selectedCurrency.code === curr.code;
                     return (
                       <button
                         key={curr.code}
                         type="button"
-                        onClick={() => handleCurrencySelect(curr)}
-                        className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs transition-colors ${
+                        onClick={() => handleSelect(curr)}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-colors cursor-pointer ${
                           isSelected 
-                            ? 'bg-white/10 text-white font-medium' 
+                            ? 'bg-[#0071e3] text-white font-medium' 
                             : 'text-[#86868b] hover:text-[#f5f5f7] hover:bg-white/[0.06]'
                         }`}
                       >
                         <div className="flex items-center gap-2.5">
-                          <span className="font-mono text-[#f5f5f7] w-5 text-left">{curr.symbol}</span>
-                          <span>{curr.name}</span>
+                          <span className={`font-mono text-sm w-5 text-center ${isSelected ? 'text-white' : 'text-[#2997ff]'}`}>
+                            {curr.symbol}
+                          </span>
+                          <div className="text-left">
+                            <span className={isSelected ? 'text-white' : 'text-[#f5f5f7]'}>{curr.code}</span>
+                            <span className={`ml-1.5 text-[11px] ${isSelected ? 'text-white/80' : 'text-[#86868b]'}`}>
+                              {curr.name}
+                            </span>
+                          </div>
                         </div>
-                        {isSelected && <Check className="w-3.5 h-3.5 text-[#2997ff]" />}
+                        {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5]" />}
                       </button>
                     );
-                  })}
-                </div>
-              ) : (
-                <div className="max-h-60 overflow-y-auto space-y-0.5 pr-1">
-                  {filteredCurrencies.length === 0 ? (
-                    <div className="p-3 text-center text-xs text-[#86868b]">
-                      No results
-                    </div>
-                  ) : (
-                    filteredCurrencies.map((curr) => {
-                      const isSelected = selectedCurrency.code === curr.code;
-                      return (
-                        <button
-                          key={curr.code}
-                          type="button"
-                          onClick={() => handleCurrencySelect(curr)}
-                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs transition-colors ${
-                            isSelected 
-                              ? 'bg-white/10 text-white font-medium' 
-                              : 'text-[#86868b] hover:text-[#f5f5f7] hover:bg-white/[0.06]'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 truncate mr-2">
-                            <span className="font-mono text-[#f5f5f7] w-5 text-left shrink-0">{curr.symbol}</span>
-                            <span className="truncate">{curr.name}</span>
-                          </div>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-[#2997ff] shrink-0" />}
-                        </button>
-                      );
-                    })
-                  )}
+                  })
+                )}
+              </div>
+
+              {ratesData && (
+                <div className="p-2 border-t border-white/[0.08] bg-black/20 text-center">
+                  <span className="text-[10px] text-[#86868b] font-mono">
+                    Updated: {new Date(ratesData.lastFetchedAt || ratesData.date).toLocaleDateString()}
+                  </span>
                 </div>
               )}
-
-              <div className="pt-2 mt-2 border-t border-white/[0.08] px-2 flex items-center justify-between text-[10px] text-[#86868b]">
-                <span>Exchange Rates</span>
-                <span>
-                  {ratesData
-                    ? ratesData.source === 'live'
-                      ? `Live (${ratesData.date})`
-                      : ratesData.source === 'cached'
-                      ? `Cached (${ratesData.date})`
-                      : `Offline Baseline (${ratesData.date})`
-                    : 'Offline Baseline (2026-11-09)'}
-                </span>
-              </div>
             </div>
           )}
         </div>
 
-        <div className="relative" ref={notifRef}>
-          <button
-            type="button"
-            onClick={() => setIsNotificationOpen(!isNotificationOpen)}
-            className="w-9 h-9 rounded-full flex items-center justify-center text-[#86868b] hover:text-[#f5f5f7] bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-all relative active:scale-95"
-          >
-            <Bell className="w-4 h-4" />
-            <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-[#ff453a]"></span>
-          </button>
-
-          {isNotificationOpen && (
-            <div className="absolute right-0 mt-2 w-72 rounded-2xl bg-[#141519]/95 backdrop-blur-2xl border border-white/[0.12] shadow-2xl p-3 z-50 animate-in fade-in zoom-in-95 duration-100 origin-top-right">
-              <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
-                <span className="text-xs font-semibold text-[#f5f5f7]">Alerts</span>
-                <span className="text-[10px] text-[#86868b] font-mono">1 Pending</span>
-              </div>
-              <div className="py-2">
-                <div className="p-2.5 rounded-xl bg-white/[0.04] text-xs">
-                  <div className="font-medium text-[#f5f5f7]">AWS CloudWatch Renewal</div>
-                  <div className="text-[11px] text-[#86868b] mt-0.5">
-                    $45.00 scheduled for billing on Nov 6 via PayPal.
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        <NotificationCenter
+          subscriptions={subscriptions}
+          currencySymbol={selectedCurrency.symbol}
+          onNavigateTab={onNavigateTab}
+        />
 
         <div className="relative" ref={profileRef}>
           <button
             type="button"
             onClick={() => setIsProfileOpen(!isProfileOpen)}
-            className="w-9 h-9 rounded-full flex items-center justify-center text-[#86868b] hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-all active:scale-95"
+            className="w-9 h-9 rounded-full flex items-center justify-center text-[#86868b] hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition-all active:scale-95 cursor-pointer shadow-xs"
+            title={profile ? profile.name : 'Account settings & vault'}
           >
-            <User className="w-4 h-4" />
+            {profile ? (
+              <span className="font-semibold text-xs text-white">
+                {profile.name.trim().charAt(0).toUpperCase()}
+              </span>
+            ) : (
+              <User className="w-4 h-4" />
+            )}
           </button>
 
           {isProfileOpen && (
-            <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-[#141519]/95 backdrop-blur-2xl border border-white/[0.12] shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-100 origin-top-right">
-              <div className="px-3 py-2 border-b border-white/[0.08]">
-                <div className="font-semibold text-xs text-[#f5f5f7]">Alex Mercer</div>
-                <div className="text-[11px] text-[#86868b] font-mono mt-0.5">alex.mercer@sandbox.paypal</div>
+            <div className="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-[#1c1c1e]/95 backdrop-blur-2xl border border-white/[0.12] shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 origin-top-right">
+              {profile && (
+                <div className="px-3 py-2 border-b border-white/[0.08] mb-1">
+                  <p className="text-xs font-semibold text-white truncate">{profile.name}</p>
+                  <p className="text-[11px] text-[#86868b] truncate">{profile.email}</p>
+                </div>
+              )}
+
+              <div className="space-y-0.5">
+                <Link
+                  href="/profile?tab=profile"
+                  onClick={() => setIsProfileOpen(false)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-[#f5f5f7] hover:text-white hover:bg-white/[0.08] transition-all cursor-pointer text-left active:scale-[0.98]"
+                >
+                  <User className="w-4 h-4 text-[#2997ff]" />
+                  <span className="font-medium">Profile</span>
+                </Link>
+
+                <Link
+                  href="/profile?tab=paypal"
+                  onClick={() => setIsProfileOpen(false)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-[#f5f5f7] hover:text-white hover:bg-white/[0.08] transition-all cursor-pointer text-left active:scale-[0.98]"
+                >
+                  <CreditCard className="w-4 h-4 text-[#0071e3]" />
+                  <span className="font-medium">PayPal</span>
+                </Link>
+
+                <Link
+                  href="/profile?tab=data"
+                  onClick={() => setIsProfileOpen(false)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-[#f5f5f7] hover:text-white hover:bg-white/[0.08] transition-all cursor-pointer text-left active:scale-[0.98]"
+                >
+                  <Database className="w-4 h-4 text-[#30d158]" />
+                  <span className="font-medium">Data</span>
+                </Link>
               </div>
 
-              <div className="py-1 space-y-0.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsProfileOpen(false);
-                    toast.info('Viewing linked PayPal Wallet');
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-[#86868b] hover:text-[#f5f5f7] hover:bg-white/[0.06] transition-colors"
-                >
-                  <CreditCard className="w-3.5 h-3.5 text-[#2997ff]" />
-                  <span>PayPal Wallet</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsProfileOpen(false);
-                    toast.info('Subscriptions Security active');
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-[#86868b] hover:text-[#f5f5f7] hover:bg-white/[0.06] transition-colors"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-[#30d158]" />
-                  <span>Security & Permissions</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsProfileOpen(false);
-                    toast.info('Preferences opened');
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-[#86868b] hover:text-[#f5f5f7] hover:bg-white/[0.06] transition-colors"
-                >
-                  <Settings className="w-3.5 h-3.5 text-[#86868b]" />
-                  <span>Settings</span>
-                </button>
-              </div>
-
-              <div className="pt-1 mt-1 border-t border-white/[0.08]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsProfileOpen(false);
-                    toast.success('Signed out of session');
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-[#ff453a] hover:bg-[#ff453a]/10 transition-colors"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>Log Out</span>
-                </button>
-              </div>
+              {profile && onSignOut && (
+                <div className="mt-1 pt-1 border-t border-white/[0.08]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsProfileOpen(false);
+                      onSignOut();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-xl text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-all cursor-pointer text-left active:scale-[0.98]"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -8,6 +8,8 @@ import { SpendHeader } from '@/components/SpendHeader';
 import { SpendMetricCards } from '@/components/SpendMetricCards';
 import { SubscriptionsTableView, SubscriptionFilterType } from '@/components/SubscriptionsTableView';
 import { AddSubscriptionModal } from '@/components/AddSubscriptionModal';
+import { ProfileModal } from '@/components/ProfileModal';
+import { UserProfile, getStoredUserProfile, clearStoredUserProfile, getUserVaultStorageKey } from '@/lib/userProfile';
 import { VigilChatView } from '@/components/VigilChatView';
 import { Channel3Deals } from '@/components/Channel3Deals';
 import { INITIAL_SUBSCRIPTIONS } from '@/lib/initialData';
@@ -16,14 +18,44 @@ import { ExchangeRateData, DEFAULT_EXCHANGE_DATA, fetchExchangeRates } from '@/l
 import { toast } from 'sonner';
 
 const STORAGE_KEY = 'paypilot_user_subscriptions_vault_v1';
+const CURRENCY_STORAGE_KEY = 'paypilot_preferred_currency_vault_v1';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<NavTab>('DASHBOARD');
-  const [currency, setCurrency] = useState<CurrencyOption>(POPULAR_CURRENCIES[0]);
+  const [currency, setCurrency] = useState<CurrencyOption>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(CURRENCY_STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.code) {
+            return parsed;
+          }
+        }
+      } catch {
+        // Fallback
+      }
+    }
+    return POPULAR_CURRENCIES[0];
+  });
+
+  const handleSelectCurrency = (newCurrency: CurrencyOption) => {
+    setCurrency(newCurrency);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(CURRENCY_STORAGE_KEY, JSON.stringify(newCurrency));
+      } catch {
+        // Fallback
+      }
+    }
+  };
   const [ratesData, setRatesData] = useState<ExchangeRateData>(DEFAULT_EXCHANGE_DATA);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showVigilDisclaimer, setShowVigilDisclaimer] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileModalTab, setProfileModalTab] = useState<'PROFILE' | 'PAYPAL' | 'DATA'>('PROFILE');
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [subscriptionFilter, setSubscriptionFilter] = useState<SubscriptionFilterType>('ALL');
 
   // Initialize state from localStorage lazily, applying any URL approval updates on mount
@@ -35,7 +67,16 @@ export default function Home() {
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            initial = parsed;
+            const seen = new Set<string>();
+            const deduped: Subscription[] = [];
+            for (const item of parsed) {
+              const dedupeKey = item.id || item.paypalAgreementId;
+              if (dedupeKey && !seen.has(dedupeKey)) {
+                seen.add(dedupeKey);
+                deduped.push(item);
+              }
+            }
+            initial = deduped.length > 0 ? deduped : parsed;
           }
         }
 
@@ -80,6 +121,9 @@ export default function Home() {
     }
 
     let mounted = true;
+    const stored = getStoredUserProfile();
+    if (stored) setUserProfile(stored);
+
     fetchExchangeRates().then((data) => {
       if (mounted) setRatesData(data);
     });
@@ -93,6 +137,8 @@ export default function Home() {
     setSubscriptions((current) => {
       const next = typeof updater === 'function' ? updater(current) : updater;
       try {
+        const key = getUserVaultStorageKey(userProfile);
+        localStorage.setItem(key, JSON.stringify(next));
         localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       } catch {
         // Storage limit or private browsing fallback
@@ -101,8 +147,48 @@ export default function Home() {
     });
   };
 
+  const handleProfileUpdate = (newProfile: UserProfile | null) => {
+    setUserProfile(newProfile);
+    if (typeof window !== 'undefined') {
+      try {
+        const userKey = getUserVaultStorageKey(newProfile);
+        const stored = localStorage.getItem(userKey) || localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSubscriptions(parsed);
+            return;
+          }
+        }
+      } catch {
+        // Fallback
+      }
+    }
+  };
+
+  const handleImportVaultData = (importedSubs: Subscription[], importedProfile: UserProfile | null, importedCurrency?: string) => {
+    updateAndPersistSubscriptions(importedSubs);
+    if (importedProfile) {
+      setUserProfile(importedProfile);
+    }
+    if (importedCurrency) {
+      const match = POPULAR_CURRENCIES.find((c) => c.code.toUpperCase() === importedCurrency.toUpperCase());
+      if (match) {
+        handleSelectCurrency(match);
+      }
+    }
+  };
+
   const handleAddSubscription = (newSub: Subscription) => {
-    updateAndPersistSubscriptions((prev) => [newSub, ...prev]);
+    updateAndPersistSubscriptions((prev) => {
+      const existsIndex = prev.findIndex((s) => s.id === newSub.id || (s.paypalAgreementId && s.paypalAgreementId === newSub.paypalAgreementId));
+      if (existsIndex >= 0) {
+        const updated = [...prev];
+        updated[existsIndex] = { ...updated[existsIndex], ...newSub };
+        return updated;
+      }
+      return [newSub, ...prev];
+    });
 
     // Dispatch Zapier lifecycle event (non-blocking)
     fetch('/api/zapier/webhook', {
@@ -186,6 +272,12 @@ export default function Home() {
     }).catch(() => {});
   };
 
+  const handleDeleteSubscription = (id: string, agreementId: string) => {
+    updateAndPersistSubscriptions((prev) =>
+      prev.filter((s) => s.id !== id && s.paypalAgreementId !== agreementId)
+    );
+  };
+
   const handleSyncStatus = async (subscriptionId: string, agreementId: string) => {
     const res = await fetch(`/api/paypal/subscription?subscriptionId=${encodeURIComponent(agreementId)}`);
     if (!res.ok) {
@@ -215,10 +307,23 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-[#000000] text-[#f5f5f7] flex flex-col font-sans selection:bg-[#0071e3]/30">
       <TopNav 
-        onSelectCurrency={setCurrency}
+        currency={currency}
+        onSelectCurrency={handleSelectCurrency}
         ratesData={ratesData}
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+        profile={userProfile}
+        subscriptions={subscriptions}
+        onOpenProfile={(tab = 'PROFILE') => {
+          setProfileModalTab(tab);
+          setShowProfileModal(true);
+        }}
+        onNavigateTab={(tab) => setActiveTab(tab)}
+        onSignOut={() => {
+          clearStoredUserProfile();
+          setUserProfile(null);
+          toast.success('Signed out of session');
+        }}
       />
 
       <div className="flex-1 flex">
@@ -227,6 +332,8 @@ export default function Home() {
           onTabChange={handleTabChange}
           onOpenAddModal={() => setShowAddModal(true)}
           collapsed={sidebarCollapsed}
+          profile={userProfile}
+          onOpenProfile={() => setShowProfileModal(true)}
         />
 
         <main className="flex-1 p-6 sm:p-10 transition-all flex flex-col items-center">
@@ -238,6 +345,7 @@ export default function Home() {
                   currencySymbol={currency.symbol}
                   currencyCode={currency.code}
                   rates={ratesData.rates}
+                  profile={userProfile}
                 />
                 <SpendMetricCards
                   subscriptions={subscriptions}
@@ -261,6 +369,7 @@ export default function Home() {
                 rates={ratesData.rates}
                 initialFilter={subscriptionFilter}
                 onExecuteAction={handleExecutePayPalAction}
+                onDeleteSubscription={handleDeleteSubscription}
                 onSyncStatus={handleSyncStatus}
                 onUpdateSubscriptions={updateAndPersistSubscriptions}
               />
@@ -273,6 +382,7 @@ export default function Home() {
                   currencySymbol={currency.symbol}
                   currencyCode={currency.code}
                   rates={ratesData.rates}
+                  profile={userProfile}
                   onExecuteAction={handleExecutePayPalAction}
                 />
               </div>
@@ -307,6 +417,19 @@ export default function Home() {
         currencyCode={currency.code}
         currencySymbol={currency.symbol}
         rates={ratesData.rates}
+        profile={userProfile}
+      />
+
+      <ProfileModal
+        key={profileModalTab}
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        profile={userProfile}
+        subscriptions={subscriptions}
+        currencyCode={currency.code}
+        initialTab={profileModalTab}
+        onUpdateProfile={handleProfileUpdate}
+        onImportData={handleImportVaultData}
       />
     </div>
   );
