@@ -2,30 +2,31 @@
 
 import React from 'react';
 import { Subscription } from '@/types';
+import { BASELINE_EXCHANGE_RATES, convertAmount } from '@/lib/currency';
 
 interface SpendHeaderProps {
   subscriptions: Subscription[];
   currencySymbol?: string;
-  currencyRate?: number;
+  currencyCode?: string;
+  rates?: Record<string, number>;
 }
 
 export function SpendHeader({
   subscriptions,
   currencySymbol = '$',
-  currencyRate = 1.0,
+  currencyCode = 'USD',
+  rates = BASELINE_EXCHANGE_RATES,
 }: SpendHeaderProps) {
   const activeSubs = subscriptions.filter((s) => s.status === 'ACTIVE');
 
-  const monthlyTotalUsd = activeSubs.reduce((acc, s) => {
-    if (s.billingCycle === 'YEARLY') return acc + s.amount / 12;
-    if (s.billingCycle === 'QUARTERLY') return acc + s.amount / 3;
-    return acc + s.amount;
+  const monthlyTotal = activeSubs.reduce((acc, s) => {
+    const converted = convertAmount(s.amount, s.currency || 'USD', currencyCode, rates);
+    if (s.billingCycle === 'YEARLY') return acc + converted / 12;
+    if (s.billingCycle === 'QUARTERLY') return acc + converted / 3;
+    return acc + converted;
   }, 0);
 
-  const annualTotalUsd = monthlyTotalUsd * 12;
-
-  const monthlyTotal = monthlyTotalUsd * currencyRate;
-  const annualTotal = annualTotalUsd * currencyRate;
+  const annualTotal = monthlyTotal * 12;
 
   return (
     <div className="w-full mb-8">

@@ -95,6 +95,8 @@ export const ALLOWED_AGENT_TOOLS = new Set([
   'find_alternatives',
   'check_upcoming_renewals',
   'stage_subscription_action',
+  'research_subscription_pricing',
+  'compare_subscription_plans',
 ]);
 
 export function isToolAllowed(toolName: string): boolean {

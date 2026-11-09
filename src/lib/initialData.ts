@@ -1,4 +1,4 @@
-import { Subscription } from '../types';
+import type { Subscription } from '@/types';
 
 export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
   {
@@ -15,8 +15,8 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     paypalAgreementId: 'I-PP-SUB-994101',
     usageScore: 84,
     redundancyGroup: 'GENERAL_LLM',
-    planName: 'Plus Monthly Tier',
-    dataSource: 'DEMO_SEED'
+    planName: 'ChatGPT Plus',
+    dataSource: 'DEMO_SEED',
   },
   {
     id: 'sub_claude_pro',
@@ -32,8 +32,8 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     paypalAgreementId: 'I-PP-SUB-881230',
     usageScore: 28,
     redundancyGroup: 'GENERAL_LLM',
-    planName: 'Individual Pro',
-    dataSource: 'DEMO_SEED'
+    planName: 'Claude Pro',
+    dataSource: 'DEMO_SEED',
   },
   {
     id: 'sub_github_copilot',
@@ -48,8 +48,8 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     lastBilledDate: '2026-10-20T00:00:00Z',
     paypalAgreementId: 'I-PP-SUB-772990',
     usageScore: 92,
-    planName: 'Copilot Business Seat',
-    dataSource: 'DEMO_SEED'
+    planName: 'Business Seat',
+    dataSource: 'DEMO_SEED',
   },
   {
     id: 'sub_aws_cloudwatch',
@@ -65,14 +65,14 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     paypalAgreementId: 'I-PP-SUB-551029',
     usageScore: 65,
     planName: 'Aggregated Retention Plan',
-    dataSource: 'DEMO_SEED'
+    dataSource: 'DEMO_SEED',
   },
   {
     id: 'sub_figma_org',
     name: 'Figma Professional',
     vendor: 'Figma Inc.',
     category: 'DESIGN_CREATIVE',
-    amount: 15.00,
+    amount: 20.00,
     currency: 'USD',
     billingCycle: 'MONTHLY',
     status: 'ACTIVE',
@@ -81,15 +81,15 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     paypalAgreementId: 'I-PP-SUB-331002',
     usageScore: 78,
     redundancyGroup: 'DESIGN_VECTOR',
-    planName: 'Single Editor Seat',
-    dataSource: 'DEMO_SEED'
+    planName: 'Professional (Monthly)',
+    dataSource: 'DEMO_SEED',
   },
   {
     id: 'sub_canva_teams',
     name: 'Canva Pro Single',
     vendor: 'Canva Pty Ltd',
     category: 'DESIGN_CREATIVE',
-    amount: 12.99,
+    amount: 18.00,
     currency: 'USD',
     billingCycle: 'MONTHLY',
     status: 'ACTIVE',
@@ -98,15 +98,15 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     paypalAgreementId: 'I-PP-SUB-224411',
     usageScore: 12,
     redundancyGroup: 'DESIGN_VECTOR',
-    planName: 'Pro Creator Monthly',
-    dataSource: 'DEMO_SEED'
+    planName: 'Canva Pro (Monthly)',
+    dataSource: 'DEMO_SEED',
   },
   {
     id: 'sub_netflix_uhd',
     name: 'Netflix 4K Premium',
     vendor: 'Netflix Inc.',
     category: 'STREAMING_MEDIA',
-    amount: 22.99,
+    amount: 26.99,
     currency: 'USD',
     billingCycle: 'MONTHLY',
     status: 'ACTIVE',
@@ -114,19 +114,24 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     lastBilledDate: '2026-10-28T00:00:00Z',
     paypalAgreementId: 'I-PP-SUB-119933',
     usageScore: 35,
-    planName: 'Premium Family',
+    planName: 'Premium (Ad-free)',
     dataSource: 'DEMO_SEED',
     priceCreepRisk: {
-      previousAmount: 19.99,
-      percentIncrease: 15.0
-    }
+      previousAmount: 22.99,
+      currentAmount: 26.99,
+      percentIncrease: 17.4,
+      monthlyImpact: 4.00,
+      annualImpact: 48.00,
+      detectedAt: '2026-10-28T00:00:00Z',
+      sourceUrl: 'https://help.netflix.com/en/node/24926',
+    },
   },
   {
     id: 'sub_notion_plus',
-    name: 'Notion Plus + AI Addon',
+    name: 'Notion Plus Team',
     vendor: 'Notion Labs',
     category: 'PRODUCTIVITY',
-    amount: 18.00,
+    amount: 12.00,
     currency: 'USD',
     billingCycle: 'MONTHLY',
     status: 'ACTIVE',
@@ -134,7 +139,7 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     lastBilledDate: '2026-10-25T00:00:00Z',
     paypalAgreementId: 'I-PP-SUB-661849',
     usageScore: 70,
-    planName: 'Workspace Member + AI',
-    dataSource: 'DEMO_SEED'
-  }
+    planName: 'Plus (Monthly)',
+    dataSource: 'DEMO_SEED',
+  },
 ];

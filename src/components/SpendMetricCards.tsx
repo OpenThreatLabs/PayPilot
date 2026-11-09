@@ -2,20 +2,23 @@
 
 import React from 'react';
 import { Subscription } from '@/types';
+import { BASELINE_EXCHANGE_RATES, convertAmount } from '@/lib/currency';
 
 export type MetricFilterType = 'ALL' | 'ACTIVE' | 'UPCOMING' | 'LOW_USAGE' | 'PRICE_CREEP';
 
 interface SpendMetricCardsProps {
   subscriptions: Subscription[];
   currencySymbol?: string;
-  currencyRate?: number;
+  currencyCode?: string;
+  rates?: Record<string, number>;
   onFilterClick?: (filterType: MetricFilterType) => void;
 }
 
 export function SpendMetricCards({
   subscriptions,
   currencySymbol = '$',
-  currencyRate = 1.0,
+  currencyCode = 'USD',
+  rates = BASELINE_EXCHANGE_RATES,
   onFilterClick,
 }: SpendMetricCardsProps) {
   const activeSubs = subscriptions.filter((s) => s.status === 'ACTIVE');
@@ -29,21 +32,27 @@ export function SpendMetricCards({
     return renewalDate >= now && renewalDate <= sevenDaysFromNow;
   });
 
-  const upcomingAmount = upcomingRenewals.reduce((sum, s) => sum + s.amount, 0) * currencyRate;
+  const upcomingAmount = upcomingRenewals.reduce((sum, s) => {
+    const converted = convertAmount(s.amount, s.currency || 'USD', currencyCode, rates);
+    return sum + converted;
+  }, 0);
 
   const lowUsageSubs = activeSubs.filter((s) => (s.usageScore ?? 100) < 40);
   const recoverableMonthly = lowUsageSubs.reduce((sum, s) => {
-    if (s.billingCycle === 'YEARLY') return sum + s.amount / 12;
-    if (s.billingCycle === 'QUARTERLY') return sum + s.amount / 3;
-    return sum + s.amount;
-  }, 0) * currencyRate;
+    const converted = convertAmount(s.amount, s.currency || 'USD', currencyCode, rates);
+    if (s.billingCycle === 'YEARLY') return sum + converted / 12;
+    if (s.billingCycle === 'QUARTERLY') return sum + converted / 3;
+    return sum + converted;
+  }, 0);
 
   const priceCreepSubs = activeSubs.filter((s) => s.priceCreepRisk && s.priceCreepRisk.percentIncrease > 0);
   const totalCreepAmount = priceCreepSubs.reduce((sum, s) => {
     if (!s.priceCreepRisk) return sum;
-    const diff = s.amount - s.priceCreepRisk.previousAmount;
+    const currConverted = convertAmount(s.amount, s.currency || 'USD', currencyCode, rates);
+    const prevConverted = convertAmount(s.priceCreepRisk.previousAmount, s.currency || 'USD', currencyCode, rates);
+    const diff = currConverted - prevConverted;
     return sum + (diff > 0 ? diff : 0);
-  }, 0) * currencyRate;
+  }, 0);
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
@@ -101,16 +110,16 @@ export function SpendMetricCards({
       >
         <div>
           <div className="flex items-center justify-between text-[#86868b] text-[12px] font-medium mb-3">
-            <span>Low Utilization</span>
-            <span className="w-2 h-2 rounded-full bg-[#30d158]"></span>
+            <span>Underutilized Spend</span>
+            <span className="w-2 h-2 rounded-full bg-[#ff453a]"></span>
           </div>
-          <div className="text-3xl font-semibold tracking-tight text-[#30d158] tabular-nums">
-            +{currencySymbol}{recoverableMonthly.toFixed(2)}
-            <span className="text-xs text-[#86868b] font-normal text-white">/mo</span>
+          <div className="text-3xl font-semibold tracking-tight text-white tabular-nums">
+            {currencySymbol}{recoverableMonthly.toFixed(2)}
+            <span className="text-xs text-[#86868b] font-normal ml-1">/mo</span>
           </div>
         </div>
         <div className="pt-3 mt-4 border-t border-white/[0.06] flex items-center justify-between text-[12px] text-[#86868b]">
-          <span>{lowUsageSubs.length} flagged &lt; 40% use</span>
+          <span>{lowUsageSubs.length} low utility (&lt;40%)</span>
         </div>
       </div>
 
@@ -124,17 +133,15 @@ export function SpendMetricCards({
         <div>
           <div className="flex items-center justify-between text-[#86868b] text-[12px] font-medium mb-3">
             <span>Price Creep Detected</span>
-            <span className="w-2 h-2 rounded-full bg-[#ff453a]"></span>
+            <span className="w-2 h-2 rounded-full bg-[#af52de]"></span>
           </div>
-          <div className="text-3xl font-semibold tracking-tight text-[#ff453a] tabular-nums flex items-baseline gap-2">
-            <span>{priceCreepSubs.length}</span>
-            <span className="text-xs font-normal text-[#86868b]">
-              (+{currencySymbol}{totalCreepAmount.toFixed(2)}/mo)
-            </span>
+          <div className="text-3xl font-semibold tracking-tight text-white tabular-nums">
+            {currencySymbol}{totalCreepAmount.toFixed(2)}
+            <span className="text-xs text-[#86868b] font-normal ml-1">/mo hike</span>
           </div>
         </div>
         <div className="pt-3 mt-4 border-t border-white/[0.06] flex items-center justify-between text-[12px] text-[#86868b]">
-          <span>Unannounced price hikes</span>
+          <span>{priceCreepSubs.length} unannounced changes</span>
         </div>
       </div>
     </div>

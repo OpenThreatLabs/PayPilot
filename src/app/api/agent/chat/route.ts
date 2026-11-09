@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenAI, Type, FunctionDeclaration } from '@google/genai';
-import { Subscription, AgentAction, AlternativeRecommendation } from '@/types';
+import { 
+  Subscription, 
+  AgentAction, 
+  AlternativeRecommendation,
+  PriceResearchResult 
+} from '@/types';
 import { calculateSpendAnalytics, generateAuditRecommendations } from '@/lib/analytics';
 import { searchAlternativeProducts } from '@/lib/channel3';
 import { 
@@ -10,33 +15,39 @@ import {
   detectPromptInjection, 
   isToolAllowed 
 } from '@/lib/security';
+import { researchSubscriptionPrice, compareServicePlans } from '@/lib/priceIntelligence';
+import { recordGeminiUsage } from '@/lib/geminiUsage';
+import { convertAmount } from '@/lib/currency';
 
-interface ChatRequestPayload {
-  messages: { role: string; content: string }[];
+interface ChatRequestBody {
+  messages: { role: 'user' | 'assistant' | 'system'; content: string }[];
   subscriptions: Subscription[];
+  currency?: string;
 }
 
 export async function POST(req: Request) {
   try {
-    const clientIp = getClientIp(req);
-    const rateLimit = checkRateLimit(clientIp, 30);
-    if (!rateLimit.allowed) {
+    const ip = getClientIp(req);
+    const rateCheck = checkRateLimit(ip, 30, 60 * 1000);
+    if (!rateCheck.allowed) {
       return NextResponse.json(
-        { error: `Too many requests. Please retry in ${rateLimit.resetInSec} seconds.` },
-        { status: 429, headers: { 'Retry-After': String(rateLimit.resetInSec) } }
+        { 
+          content: `Vigil rate limit reached. Please wait ${rateCheck.resetInSec} seconds before sending another message.`,
+          actionRequired: undefined,
+          alternatives: [],
+          toolCallHistory: [],
+        },
+        { status: 429 }
       );
     }
 
-    const body: ChatRequestPayload = await req.json();
-    const rawMessages = Array.isArray(body.messages) ? body.messages : [];
-    const subscriptions = Array.isArray(body.subscriptions) ? body.subscriptions : [];
+    const body: ChatRequestBody = await req.json();
+    const { messages = [], subscriptions = [] } = body;
 
-    const messages = rawMessages.slice(-15).map((m) => ({
-      role: m.role === 'user' ? 'user' : 'assistant',
-      content: sanitizeUserText(m.content, 2000),
-    }));
-
-    const latestUserMessage = messages[messages.length - 1]?.content || '';
+    const latestUserMessage = sanitizeUserText(
+      messages.filter((m) => m.role === 'user').slice(-1)[0]?.content || '',
+      3000
+    );
 
     const injectionCheck = detectPromptInjection(latestUserMessage);
     if (injectionCheck.suspicious) {
@@ -48,11 +59,12 @@ export async function POST(req: Request) {
       });
     }
 
-    const analytics = calculateSpendAnalytics(subscriptions);
-    const audit = generateAuditRecommendations(subscriptions);
+    const userCurrency = sanitizeUserText(body?.currency || 'USD', 10).toUpperCase();
+    const analytics = calculateSpendAnalytics(subscriptions, userCurrency);
+    const audit = generateAuditRecommendations(subscriptions, userCurrency);
 
     const activeList = subscriptions.map((s) => 
-      `- ${s.name} [ID: ${s.id}] ($${s.amount}/${s.billingCycle.toLowerCase()} via ${s.paypalAgreementId}, Status: ${s.status}, Usage Score: ${s.usageScore}%, Next Bill: ${s.nextBillingDate ? s.nextBillingDate.slice(0, 10) : 'N/A'}, Plan: ${s.planName}, Source: ${s.dataSource || 'MANUAL_VAULT'})`
+      `- ${s.name} [ID: ${s.id}] (${s.currency || 'USD'} ${s.amount}/${s.billingCycle.toLowerCase()} via ${s.paypalAgreementId}, Status: ${s.status}, Usage Score: ${s.usageScore}%, Next Bill: ${s.nextBillingDate ? s.nextBillingDate.slice(0, 10) : 'N/A'}, Plan: ${s.planName}, Source: ${s.dataSource || 'MANUAL_VAULT'})`
     ).join('\n');
 
     const runAnalyzeSpending = () => {
@@ -96,11 +108,15 @@ export async function POST(req: Request) {
       return {
         timeframeDays: days,
         count: renewingSoon.length,
-        totalAmount: renewingSoon.reduce((sum, s) => sum + s.amount, 0),
+        currency: userCurrency,
+        totalAmount: Math.round(
+          renewingSoon.reduce((sum, s) => sum + convertAmount(s.amount, s.currency || 'USD', userCurrency), 0) * 100
+        ) / 100,
         renewals: renewingSoon.map((s) => ({
           id: s.id,
           name: s.name,
           amount: s.amount,
+          currency: s.currency || 'USD',
           nextBillingDate: s.nextBillingDate.slice(0, 10),
           paypalAgreementId: s.paypalAgreementId,
         })),
@@ -134,16 +150,89 @@ export async function POST(req: Request) {
       };
     };
 
+    const runResearchSubscriptionPricing = async (serviceName: string, currency: string = userCurrency, country?: string) => {
+      return await researchSubscriptionPrice(serviceName, currency || userCurrency, country);
+    };
+
+    const runCompareSubscriptionPlans = async (services: string[], currency: string = userCurrency) => {
+      return await compareServicePlans(services, currency || userCurrency);
+    };
+
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
       const lower = latestUserMessage.toLowerCase();
-      let responseText = `I have audited your portfolio of ${analytics.activeCount} active subscriptions. You are currently spending $${analytics.monthlyTotal.toFixed(2)}/month ($${analytics.annualizedTotal.toFixed(2)}/year).`;
+      let responseText = `I have audited your portfolio of ${analytics.activeCount} active subscriptions. You are currently spending ${userCurrency} ${analytics.monthlyTotal.toFixed(2)}/month (${userCurrency} ${analytics.annualizedTotal.toFixed(2)}/year).`;
       let actionRequired: AgentAction | undefined = undefined;
       let alternatives: AlternativeRecommendation[] = [];
+      let priceResearchResult: PriceResearchResult | undefined = undefined;
       const toolCallHistory: { toolName: string; input: Record<string, unknown>; summary: string }[] = [];
 
-      if (lower.includes('cancel') || lower.includes('stop') || lower.includes('pause') || lower.includes('suspend') || lower.includes('cut')) {
+      if (lower.includes('compare') || lower.includes(' vs ') || lower.includes('versus')) {
+        const detectedServices: string[] = [];
+        if (lower.includes('chatgpt') || lower.includes('gpt')) detectedServices.push('ChatGPT');
+        if (lower.includes('claude')) detectedServices.push('Claude');
+        if (lower.includes('cursor')) detectedServices.push('Cursor');
+        if (lower.includes('copilot') || lower.includes('github')) detectedServices.push('GitHub Copilot');
+        if (lower.includes('netflix')) detectedServices.push('Netflix');
+        if (lower.includes('spotify')) detectedServices.push('Spotify');
+
+        const targets = detectedServices.length >= 2 ? detectedServices : ['ChatGPT', 'Claude'];
+        const currency = lower.includes('inr') || lower.includes('india') ? 'INR' : 'USD';
+        const comparison = await runCompareSubscriptionPlans(targets, currency);
+
+        toolCallHistory.push({
+          toolName: 'compare_subscription_plans',
+          input: { services: targets, currency },
+          summary: `Compared ${targets.join(' vs ')} in ${currency}`,
+        });
+
+        responseText = comparison.comparisonSummary;
+      } else if (
+        lower.includes('pricing') ||
+        lower.includes('price') ||
+        lower.includes('plan') ||
+        lower.includes('cost') ||
+        lower.includes('student') ||
+        lower.includes('tier')
+      ) {
+        let targetService = 'Netflix';
+        if (lower.includes('spotify')) targetService = 'Spotify';
+        else if (lower.includes('chatgpt') || lower.includes('gpt')) targetService = 'ChatGPT';
+        else if (lower.includes('claude')) targetService = 'Claude';
+        else if (lower.includes('cursor')) targetService = 'Cursor';
+        else if (lower.includes('copilot')) targetService = 'GitHub Copilot';
+        else if (lower.includes('canva')) targetService = 'Canva';
+        else if (lower.includes('notion')) targetService = 'Notion';
+        else if (lower.includes('youtube')) targetService = 'YouTube';
+        else if (lower.includes('prime') || lower.includes('amazon')) targetService = 'Amazon Prime';
+        else if (lower.includes('zomato')) targetService = 'Zomato';
+        else if (lower.includes('swiggy')) targetService = 'Swiggy';
+        else {
+          const matchedSub = subscriptions.find((s) => lower.includes(s.name.toLowerCase()));
+          if (matchedSub) targetService = matchedSub.name;
+        }
+
+        const currency = lower.includes('inr') || lower.includes('india') || lower.includes('rupee') || lower.includes('₹') ? 'INR' : 'USD';
+        const res = await runResearchSubscriptionPricing(targetService, currency);
+        priceResearchResult = res;
+
+        toolCallHistory.push({
+          toolName: 'research_subscription_pricing',
+          input: { serviceName: targetService, currency },
+          summary: `Researched ${targetService} (${res.plans.length} tiers, status: ${res.overallStatus})`,
+        });
+
+        const statusTag = res.overallStatus === 'VERIFIED' ? '✅ Official Verified' : '🔍 Cross-Checked';
+        responseText = `### Live Pricing Intelligence: **${res.serviceName}** (${res.currency})\n\n` +
+          `*Status: ${statusTag}* | *Country: ${res.country}*\n` +
+          (res.sourceUrl ? `*Source: [${res.sourceTitle || res.sourceUrl}](${res.sourceUrl}) (Last verified: ${res.lastVerified.slice(0, 10)})*\n\n` : '\n') +
+          res.plans.map((p) => {
+            const extra = p.isStudentDiscount ? ' *(Student Discount)*' : p.isIntroductory ? ' *(Introductory Rate)*' : '';
+            return `• **${p.name}**: **${res.currency} ${p.amount}** / ${p.cycle.toLowerCase()}${extra}\n  ${p.features}`;
+          }).join('\n\n') +
+          `\n\n${res.verificationNotes || ''}`;
+      } else if (lower.includes('cancel') || lower.includes('stop') || lower.includes('pause') || lower.includes('suspend') || lower.includes('cut')) {
         const actionType = lower.includes('pause') || lower.includes('suspend') ? 'CONFIRM_SUSPEND' : 'CONFIRM_CANCEL';
         const target = subscriptions.find((s) => 
           lower.includes(s.name.toLowerCase()) || lower.includes(s.vendor.toLowerCase())
@@ -222,20 +311,21 @@ export async function POST(req: Request) {
         });
 
         responseText = `### Vigil Spend Audit\n\nHere is your financial portfolio breakdown:\n\n` +
-          `• **Monthly Outflow:** $${analytics.monthlyTotal.toFixed(2)}\n` +
-          `• **Annualized Outflow:** $${analytics.annualizedTotal.toFixed(2)}\n` +
+          `• **Monthly Outflow:** ${userCurrency} ${analytics.monthlyTotal.toFixed(2)}\n` +
+          `• **Annualized Outflow:** ${userCurrency} ${analytics.annualizedTotal.toFixed(2)}\n` +
           `• **Active Subscriptions:** ${analytics.activeCount}\n` +
           `• **Low-Utilization Spend:** ${analytics.flaggedZombieCount} flagged items\n` +
-          `• **Potential Savings:** **+$${analytics.potentialAnnualSavings.toFixed(2)}/year**\n\n` +
+          `• **Potential Savings:** **+${userCurrency} ${analytics.potentialAnnualSavings.toFixed(2)}/year**\n\n` +
           `**Key Recommendations:**\n` +
-          audit.slice(0, 3).map((a, i) => `${i + 1}. **${a.title}**: ${a.description} (*Save $${a.potentialMonthlySavings}/mo*)`).join('\n') +
-          `\n\nAsk me to **"cancel [name]"**, **"find alternatives for [tool]"**, or **"check renewals"** to take action.`;
+          audit.slice(0, 3).map((a, i) => `${i + 1}. **${a.title}**: ${a.description} (*Save ${userCurrency} ${a.potentialMonthlySavings}/mo*)`).join('\n') +
+          `\n\nAsk me to **"research pricing for [service]"**, **"compare [service A] vs [service B]"**, **"cancel [name]"**, or **"find alternatives for [tool]"**.`;
       }
 
       return NextResponse.json({
         content: responseText,
         actionRequired,
         alternatives,
+        priceResearchResult,
         toolCallHistory,
       });
     }
@@ -243,32 +333,76 @@ export async function POST(req: Request) {
     const ai = new GoogleGenAI({ apiKey });
 
     const systemInstruction = `You are Vigil, PayPilot's Autonomous Financial Guardian & Subscription Copilot.
-You assist individuals and small businesses in managing recurring subscriptions, cutting duplicate waste, finding cheaper software deals, and safely preparing PayPal billing agreement changes.
+You assist individuals and small businesses in managing recurring subscriptions, cutting duplicate waste, finding cheaper software deals, safely preparing PayPal billing changes, and researching live verified subscription prices.
 
 Active User Subscriptions:
 ${activeList}
 
 Analytics Summary:
-- Monthly Outflow: $${analytics.monthlyTotal}
-- Annualized Outflow: $${analytics.annualizedTotal}
+- User Display Currency: ${userCurrency}
+- Monthly Outflow: ${userCurrency} ${analytics.monthlyTotal}
+- Annualized Outflow: ${userCurrency} ${analytics.annualizedTotal}
 - Active Services: ${analytics.activeCount}
 - Flagged Zombie/Low Usage: ${analytics.flaggedZombieCount}
-- Potential Annual Savings: $${analytics.potentialAnnualSavings}
+- Potential Annual Savings: ${userCurrency} ${analytics.potentialAnnualSavings}
 
 Current Audit Alerts:
-${audit.map(a => `[${a.type}] ${a.title}: ${a.description} (Savings: $${a.potentialMonthlySavings}/mo)`).join('\n')}
+${audit.map(a => `[${a.type}] ${a.title}: ${a.description} (Savings: ${userCurrency} ${a.potentialMonthlySavings}/mo)`).join('\n')}
 
 Guidelines:
 1. Provide razor-sharp, actionable financial advice with clear markdown formatting.
-2. Use tools to query information, search alternatives, or stage actions:
-   - Use 'analyze_spending' to get exact savings calculations and redundancy groups.
-   - Use 'find_alternatives' to query Channel3 product graph for cheaper or lifetime software alternatives.
-   - Use 'check_upcoming_renewals' to evaluate renewals in the next N days.
-   - Use 'stage_subscription_action' when the user asks to cancel, pause, or suspend a subscription.
+2. Tools available to you:
+   - 'research_subscription_pricing': Research live official subscription pricing, tiers, and student discounts for any service. Always use this when the user asks about current pricing in a country, recent price changes, or plan details.
+   - 'compare_subscription_plans': Compare prices, tiers, and savings across competing subscriptions.
+   - 'analyze_spending': Audit portfolio spend, calculate redundancy groups, and detect zombie expenses.
+   - 'find_alternatives': Query Channel3 Universal Product Graph for cheaper or one-time lifetime software replacements.
+   - 'check_upcoming_renewals': Check upcoming subscription renewal dates and renewal cash flow.
+   - 'stage_subscription_action': Stage a subscription cancellation or pause.
 3. SECURITY RULE: You CANNOT execute payment mutations or direct cancellations yourself. You must ALWAYS use 'stage_subscription_action' so that the user receives an explicit confirmation card.
-4. When suggesting alternatives, cite the brand, one-time price, merchant, and source.`;
+4. When reporting pricing, always cite the source URL, verification status (VERIFIED vs CROSS_CHECKED vs UNVERIFIED), and last checked date. Never fabricate pricing.`;
 
     const toolDeclarations = [
+      {
+        name: 'research_subscription_pricing',
+        description: 'Performs live web research for current subscription plans, regional prices, student discounts, and official sources using Google Search grounding.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            serviceName: {
+              type: Type.STRING,
+              description: 'The subscription service name (e.g. Netflix, Spotify, ChatGPT, Cursor, GitHub Copilot)',
+            },
+            currency: {
+              type: Type.STRING,
+              description: 'Currency code to query in (e.g. INR, USD, EUR, GBP)',
+            },
+            country: {
+              type: Type.STRING,
+              description: 'Country name (e.g. India, United States, United Kingdom)',
+            },
+          },
+          required: ['serviceName'],
+        },
+      },
+      {
+        name: 'compare_subscription_plans',
+        description: 'Compares current live subscription pricing, tiers, and feature differences between two or more competing software services.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            services: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: 'List of subscription names to compare (e.g. ["ChatGPT Plus", "Claude Pro"])',
+            },
+            currency: {
+              type: Type.STRING,
+              description: 'Currency code (e.g. USD, INR)',
+            },
+          },
+          required: ['services'],
+        },
+      },
       {
         name: 'analyze_spending',
         description: 'Analyzes user subscription portfolio for spending patterns, zombie expenses, and redundancy groups.',
@@ -337,24 +471,47 @@ Guidelines:
       },
     ];
 
-    async function generateWithFallback(callConfig: { contents: any[]; config?: any }) {
-      const candidateModels = [
-        'gemini-3.5-flash',
-        'gemini-3.5-flash-lite',
-        'gemini-3.5-flash',
-        'gemini-flash-latest'
-      ];
-      let lastError: any = null;
+    async function generateWithFallback(callConfig: {
+      contents: Array<{ role: string; parts: Array<{ text: string }> }>;
+      config?: {
+        systemInstruction?: string;
+        tools?: Array<{ functionDeclarations: FunctionDeclaration[] }>;
+      };
+    }) {
+      const candidateModels = ['gemini-2.5-flash', 'gemini-1.5-flash'];
+      let lastError: unknown = null;
       for (const m of candidateModels) {
         try {
-          return await ai.models.generateContent({
-            ...callConfig,
-            model: m,
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 10000);
+
+          const response = await Promise.race([
+            ai.models.generateContent({
+              ...callConfig,
+              model: m,
+            }),
+            new Promise<never>((_, reject) => {
+              controller.signal.addEventListener('abort', () => reject(new Error('Gemini API request timed out')));
+            }),
+          ]);
+          clearTimeout(timeout);
+
+          const usage = response.usageMetadata;
+          recordGeminiUsage({
+            promptTokens: usage?.promptTokenCount,
+            candidatesTokens: usage?.candidatesTokenCount,
+            totalTokens: usage?.totalTokenCount,
           });
-        } catch (err: any) {
+
+          return response;
+        } catch (err: unknown) {
           lastError = err;
-          const s = String(err?.status || err?.code || err?.message || '');
-          if (s.includes('503') || s.includes('UNAVAILABLE') || s.includes('429') || s.includes('high demand')) {
+          const s = String(err ?? '');
+          if (s.includes('429') || s.includes('RESOURCE_EXHAUSTED')) {
+            recordGeminiUsage({ isRateLimit: true });
+            break;
+          }
+          if (s.includes('404') || s.includes('not found')) {
             continue;
           }
           throw err;
@@ -365,10 +522,10 @@ Guidelines:
 
     const response = await generateWithFallback({
       contents: [
-        ...messages.map(m => ({
+        ...messages.map((m) => ({
           role: m.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: m.content }]
-        }))
+          parts: [{ text: m.content }],
+        })),
       ],
       config: {
         systemInstruction,
@@ -378,6 +535,7 @@ Guidelines:
 
     let actionRequired: AgentAction | undefined = undefined;
     const alternatives: AlternativeRecommendation[] = [];
+    let priceResearchResult: PriceResearchResult | undefined = undefined;
     const toolCallHistory: { toolName: string; input: Record<string, unknown>; summary: string }[] = [];
 
     const functionCalls = response.functionCalls;
@@ -389,7 +547,29 @@ Guidelines:
         if (!toolName || !isToolAllowed(toolName)) continue;
 
         try {
-          if (toolName === 'analyze_spending') {
+          if (toolName === 'research_subscription_pricing') {
+            const svc = typeof toolArgs.serviceName === 'string' ? toolArgs.serviceName : '';
+            const curr = typeof toolArgs.currency === 'string' && toolArgs.currency ? toolArgs.currency : userCurrency;
+            const ctry = typeof toolArgs.country === 'string' ? toolArgs.country : undefined;
+            const res = await runResearchSubscriptionPricing(svc, curr, ctry);
+            priceResearchResult = res;
+
+            toolCallHistory.push({
+              toolName,
+              input: toolArgs,
+              summary: `Researched ${svc} in ${curr}: ${res.plans.length} plans (${res.overallStatus})`,
+            });
+          } else if (toolName === 'compare_subscription_plans') {
+            const svcs = Array.isArray(toolArgs.services) ? (toolArgs.services as string[]) : [];
+            const curr = typeof toolArgs.currency === 'string' && toolArgs.currency ? toolArgs.currency : userCurrency;
+            await runCompareSubscriptionPlans(svcs, curr);
+
+            toolCallHistory.push({
+              toolName,
+              input: toolArgs,
+              summary: `Compared ${svcs.join(' vs ')} in ${curr}`,
+            });
+          } else if (toolName === 'analyze_spending') {
             runAnalyzeSpending();
             toolCallHistory.push({
               toolName,
@@ -453,36 +633,50 @@ Guidelines:
 
       const followUp = await generateWithFallback({
         contents: [
-          ...messages.map(m => ({
+          ...messages.map((m) => ({
             role: m.role === 'assistant' ? 'model' : 'user',
-            parts: [{ text: m.content }]
+            parts: [{ text: m.content }],
           })),
           {
             role: 'user',
-            parts: [{ text: `Tool output results: ${toolCallHistory.map(t => t.toolName).join(', ')}. Summarizing results for user.` }]
-          }
+            parts: [
+              {
+                text: `Tool output results: ${toolCallHistory.map((t) => `${t.toolName} (${t.summary})`).join(', ')}. Please formulate your final financial response for the user, referencing source citations and verification statuses where applicable.`,
+              },
+            ],
+          },
         ],
         config: {
           systemInstruction,
-        }
+        },
       });
 
       return NextResponse.json({
-        content: followUp.text || response.text || 'Analysis complete.',
+        content: followUp.text || 'I evaluated your request. Let me know if you would like me to research other plans or take action.',
         actionRequired,
         alternatives,
+        priceResearchResult,
         toolCallHistory,
       });
     }
 
     return NextResponse.json({
-      content: response.text || 'I analyzed your request.',
-      actionRequired,
-      alternatives,
-      toolCallHistory,
+      content: response.text || 'I have reviewed your financial query. How else may I assist you today?',
+      actionRequired: undefined,
+      alternatives: [],
+      priceResearchResult: undefined,
+      toolCallHistory: [],
     });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Internal Server Error';
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch (error) {
+    console.error('Agent chat endpoint failure:', error);
+    return NextResponse.json(
+      {
+        content: 'Vigil is currently operating in local mode. You can view your subscriptions and request manual audits.',
+        actionRequired: undefined,
+        alternatives: [],
+        toolCallHistory: [],
+      },
+      { status: 500 }
+    );
   }
 }

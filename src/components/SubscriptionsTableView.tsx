@@ -5,29 +5,83 @@ import { Subscription } from '@/types';
 import { Search, Pause, X, Play, Loader2, FileSpreadsheet, ExternalLink, RefreshCw, CreditCard } from 'lucide-react';
 import { CompanyLogo } from '@/components/CompanyLogo';
 import { PowerAuditModal } from '@/components/PowerAuditModal';
+import { BASELINE_EXCHANGE_RATES, convertAmount } from '@/lib/currency';
 import { toast } from 'sonner';
 
 export type SubscriptionFilterType = 'ALL' | 'ACTIVE' | 'PAYPAL_LIVE' | 'UPCOMING' | 'LOW_USAGE' | 'PRICE_CREEP';
 
+const getOrigSymbol = (code?: string) => {
+  if (!code) return '$';
+  switch (code.toUpperCase()) {
+    case 'USD': return '$';
+    case 'INR': return '₹';
+    case 'EUR': return '€';
+    case 'GBP': return '£';
+    case 'JPY': return '¥';
+    case 'RUB': return '₽';
+    case 'CAD': return 'CA$';
+    case 'AUD': return 'A$';
+    default: return `${code} `;
+  }
+};
+
 interface SubscriptionsTableViewProps {
   subscriptions: Subscription[];
   currencySymbol?: string;
+  currencyCode?: string;
+  rates?: Record<string, number>;
   initialFilter?: SubscriptionFilterType;
   onExecuteAction: (action: 'CANCEL' | 'SUSPEND' | 'ACTIVATE', id: string, agreementId: string) => Promise<void>;
   onSyncStatus?: (subscriptionId: string, agreementId: string) => Promise<void>;
+  onUpdateSubscriptions?: (subs: Subscription[]) => void;
 }
 
 export function SubscriptionsTableView({
   subscriptions,
   currencySymbol = '$',
+  currencyCode = 'USD',
+  rates = BASELINE_EXCHANGE_RATES,
   initialFilter = 'ALL',
   onExecuteAction,
   onSyncStatus,
+  onUpdateSubscriptions,
 }: SubscriptionsTableViewProps) {
   const [showAuditModal, setShowAuditModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<SubscriptionFilterType>(initialFilter);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [isAuditingPrices, setIsAuditingPrices] = useState(false);
+
+  const handleRunPriceRadar = async () => {
+    setIsAuditingPrices(true);
+    try {
+      const res = await fetch('/api/pricing/monitor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscriptions, currency: currencyCode }),
+      });
+      if (!res.ok) throw new Error('Price Radar audit failed');
+      const data = await res.json();
+      if (data.updatedSubscriptions && onUpdateSubscriptions) {
+        onUpdateSubscriptions(data.updatedSubscriptions);
+      }
+      if (data.report) {
+        if (data.report.increasesDetected > 0) {
+          toast.warning(
+            `Price Radar: ${data.report.increasesDetected} price increase(s) detected! (+${currencySymbol}${data.report.netMonthlyImpact}/mo, +${currencySymbol}${data.report.netAnnualImpact}/yr)`
+          );
+        } else {
+          toast.success(
+            `Price Radar: Verified ${data.report.totalChecked} subscriptions against live web pricing. No price creep detected!`
+          );
+        }
+      }
+    } catch {
+      toast.error('Price Radar check failed. Please ensure the server is running.');
+    } finally {
+      setIsAuditingPrices(false);
+    }
+  };
 
   const filteredSubscriptions = useMemo(() => {
     const now = new Date();
@@ -110,6 +164,21 @@ export function SubscriptionsTableView({
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            disabled={isAuditingPrices}
+            onClick={handleRunPriceRadar}
+            className="px-3 py-2 rounded-xl bg-[#0071e3]/15 hover:bg-[#0071e3]/25 border border-[#0071e3]/30 text-[#2997ff] text-xs font-medium transition-all active:scale-[0.96] flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            title="On-demand live web price scan (stored in browser local ledger)"
+          >
+            {isAuditingPrices ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="w-3.5 h-3.5" />
+            )}
+            <span>{isAuditingPrices ? 'Scanning Live Prices...' : 'Price Radar'}</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setShowAuditModal(true)}
@@ -201,8 +270,12 @@ export function SubscriptionsTableView({
                               </span>
                             )}
                             {sub.priceCreepRisk && sub.priceCreepRisk.percentIncrease > 0 && (
-                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">
+                              <span 
+                                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20"
+                                title={sub.priceCreepRisk.annualImpact ? `Annual impact: +${currencySymbol}${convertAmount(sub.priceCreepRisk.annualImpact, sub.currency || 'USD', currencyCode, rates).toFixed(2)}/yr` : undefined}
+                              >
                                 +{sub.priceCreepRisk.percentIncrease}%
+                                {sub.priceCreepRisk.monthlyImpact ? ` (+${currencySymbol}${convertAmount(sub.priceCreepRisk.monthlyImpact, sub.currency || 'USD', currencyCode, rates).toFixed(2)}/mo)` : ''}
                               </span>
                             )}
                           </div>
@@ -214,8 +287,22 @@ export function SubscriptionsTableView({
                     </td>
 
                     <td className="py-4 px-4 font-mono font-medium text-white tabular-nums">
-                      {currencySymbol}{sub.amount.toFixed(2)}
-                      <span className="text-[10px] text-[#86868b] ml-1 font-sans">/{sub.billingCycle.toLowerCase()}</span>
+                      {sub.currency && sub.currency.toUpperCase() !== currencyCode.toUpperCase() ? (
+                        <div>
+                          <div>
+                            {currencySymbol}{convertAmount(sub.amount, sub.currency, currencyCode, rates).toFixed(2)}
+                            <span className="text-[10px] text-[#86868b] ml-1 font-sans">/{sub.billingCycle.toLowerCase()}</span>
+                          </div>
+                          <div className="text-[10px] text-[#86868b] font-sans font-normal mt-0.5">
+                            Orig. {getOrigSymbol(sub.currency)}{sub.amount.toFixed(2)} {sub.currency}
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          {currencySymbol}{sub.amount.toFixed(2)}
+                          <span className="text-[10px] text-[#86868b] ml-1 font-sans">/{sub.billingCycle.toLowerCase()}</span>
+                        </div>
+                      )}
                     </td>
 
                     <td className="py-4 px-4 font-mono text-[11px] text-[#86868b]">
@@ -351,6 +438,8 @@ export function SubscriptionsTableView({
         onClose={() => setShowAuditModal(false)}
         subscriptions={subscriptions}
         currencySymbol={currencySymbol}
+        currencyCode={currencyCode}
+        rates={rates}
       />
     </div>
   );

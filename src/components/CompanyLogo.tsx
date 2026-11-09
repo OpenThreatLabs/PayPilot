@@ -126,6 +126,7 @@ export function CompanyLogo({ name, vendor, size = 32, className = '' }: Company
       }}
     >
       {!loadFailed ? (
+        /* eslint-disable-next-line @next/next/no-img-element */
         <img
           src={logoUrl}
           alt={name}

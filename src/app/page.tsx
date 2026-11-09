@@ -12,6 +12,7 @@ import { VigilChatView } from '@/components/VigilChatView';
 import { Channel3Deals } from '@/components/Channel3Deals';
 import { INITIAL_SUBSCRIPTIONS } from '@/lib/initialData';
 import { Subscription } from '@/types';
+import { ExchangeRateData, DEFAULT_EXCHANGE_DATA, fetchExchangeRates } from '@/lib/currency';
 import { toast } from 'sonner';
 
 const STORAGE_KEY = 'paypilot_user_subscriptions_vault_v1';
@@ -19,6 +20,7 @@ const STORAGE_KEY = 'paypilot_user_subscriptions_vault_v1';
 export default function Home() {
   const [activeTab, setActiveTab] = useState<NavTab>('DASHBOARD');
   const [currency, setCurrency] = useState<CurrencyOption>(POPULAR_CURRENCIES[0]);
+  const [ratesData, setRatesData] = useState<ExchangeRateData>(DEFAULT_EXCHANGE_DATA);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showVigilDisclaimer, setShowVigilDisclaimer] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -76,6 +78,15 @@ export default function Home() {
       toast.info('PayPal subscription checkout was cancelled by user');
       window.history.replaceState({}, document.title, window.location.pathname);
     }
+
+    let mounted = true;
+    fetchExchangeRates().then((data) => {
+      if (mounted) setRatesData(data);
+    });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const updateAndPersistSubscriptions = (updater: Subscription[] | ((prev: Subscription[]) => Subscription[])) => {
@@ -205,6 +216,7 @@ export default function Home() {
     <div className="min-h-screen bg-[#000000] text-[#f5f5f7] flex flex-col font-sans selection:bg-[#0071e3]/30">
       <TopNav 
         onSelectCurrency={setCurrency}
+        ratesData={ratesData}
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
@@ -224,10 +236,14 @@ export default function Home() {
                 <SpendHeader
                   subscriptions={subscriptions}
                   currencySymbol={currency.symbol}
+                  currencyCode={currency.code}
+                  rates={ratesData.rates}
                 />
                 <SpendMetricCards
                   subscriptions={subscriptions}
                   currencySymbol={currency.symbol}
+                  currencyCode={currency.code}
+                  rates={ratesData.rates}
                   onFilterClick={(type) => {
                     setSubscriptionFilter(type);
                     setActiveTab('SUBSCRIPTIONS');
@@ -241,9 +257,12 @@ export default function Home() {
                 key={subscriptionFilter}
                 subscriptions={subscriptions}
                 currencySymbol={currency.symbol}
+                currencyCode={currency.code}
+                rates={ratesData.rates}
                 initialFilter={subscriptionFilter}
                 onExecuteAction={handleExecutePayPalAction}
                 onSyncStatus={handleSyncStatus}
+                onUpdateSubscriptions={updateAndPersistSubscriptions}
               />
             )}
 
@@ -252,6 +271,8 @@ export default function Home() {
                 <VigilChatView
                   subscriptions={subscriptions}
                   currencySymbol={currency.symbol}
+                  currencyCode={currency.code}
+                  rates={ratesData.rates}
                   onExecuteAction={handleExecutePayPalAction}
                 />
               </div>
@@ -259,7 +280,11 @@ export default function Home() {
 
             {activeTab === 'CHANNEL3' && (
               <div className="w-full">
-                <Channel3Deals />
+                <Channel3Deals
+                  currencySymbol={currency.symbol}
+                  currencyCode={currency.code}
+                  rates={ratesData.rates}
+                />
               </div>
             )}
           </div>
@@ -281,6 +306,7 @@ export default function Home() {
         onAdd={handleAddSubscription}
         currencyCode={currency.code}
         currencySymbol={currency.symbol}
+        rates={ratesData.rates}
       />
     </div>
   );

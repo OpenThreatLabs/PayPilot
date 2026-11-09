@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Channel3Product } from '@/lib/channel3';
-import { Sparkles, ExternalLink, ShieldCheck, ArrowRight, TrendingDown } from 'lucide-react';
+import { Sparkles, ExternalLink, TrendingDown } from 'lucide-react';
 
 interface Channel3SuggestionsProps {
   serviceName: string;
@@ -18,24 +18,19 @@ export const Channel3Suggestions: React.FC<Channel3SuggestionsProps> = ({
   onSelectAlternative,
 }) => {
   const [deals, setDeals] = useState<Channel3Product[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const query = (serviceName || category || '').trim();
+  const activeDeals = query.length >= 2 ? deals : [];
 
   useEffect(() => {
-    const q = (serviceName || category || '').trim();
-    if (!q || q.length < 2) {
-      setDeals([]);
-      return;
-    }
+    if (query.length < 2) return;
 
     let isCancelled = false;
-    setIsLoading(true);
-
     const timer = setTimeout(async () => {
       try {
         const res = await fetch('/api/channel3/search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: q }),
+          body: JSON.stringify({ query }),
         });
         if (!res.ok) return;
         const data = await res.json();
@@ -44,8 +39,6 @@ export const Channel3Suggestions: React.FC<Channel3SuggestionsProps> = ({
         }
       } catch {
         if (!isCancelled) setDeals([]);
-      } finally {
-        if (!isCancelled) setIsLoading(false);
       }
     }, 300);
 
@@ -53,9 +46,9 @@ export const Channel3Suggestions: React.FC<Channel3SuggestionsProps> = ({
       isCancelled = true;
       clearTimeout(timer);
     };
-  }, [serviceName, category]);
+  }, [query]);
 
-  if (!deals.length && !isLoading) return null;
+  if (!activeDeals.length) return null;
 
   return (
     <div className="p-3.5 rounded-2xl bg-gradient-to-b from-[#7c3aed]/10 to-[#7c3aed]/[0.02] border border-[#7c3aed]/20 space-y-2.5">
@@ -74,14 +67,15 @@ export const Channel3Suggestions: React.FC<Channel3SuggestionsProps> = ({
       </p>
 
       <div className="grid grid-cols-1 gap-2 pt-1">
-        {deals.map((deal) => {
+        {activeDeals.map((deal) => {
           const annualCost = (currentMonthlyCost || 15) * 12;
           const saving = deal.savingVersusRecurringYearly || Math.max(0, Math.round(annualCost - deal.price));
 
           return (
             <div
               key={deal.id}
-              className="p-2.5 rounded-xl bg-black/40 border border-white/[0.08] hover:border-[#a855f7]/40 hover:bg-white/[0.02] transition-all flex items-center justify-between gap-3 group"
+              onClick={() => onSelectAlternative?.(deal)}
+              className="p-2.5 rounded-xl bg-black/40 border border-white/[0.08] hover:border-[#a855f7]/40 hover:bg-white/[0.02] transition-all flex items-center justify-between gap-3 group cursor-pointer"
             >
               <div className="space-y-0.5 min-w-0">
                 <div className="flex items-center gap-2">
@@ -114,6 +108,7 @@ export const Channel3Suggestions: React.FC<Channel3SuggestionsProps> = ({
                   href={deal.buyUrl}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
                   className="p-1.5 rounded-lg bg-white/[0.06] hover:bg-[#7c3aed]/30 text-white transition-colors"
                   title="View Deal Offer"
                 >

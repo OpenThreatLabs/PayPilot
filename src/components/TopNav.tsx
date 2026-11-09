@@ -14,6 +14,7 @@ import {
   PanelLeftClose,
   PanelLeft
 } from 'lucide-react';
+import { ExchangeRateData } from '@/lib/currency';
 import { toast } from 'sonner';
 
 export interface CurrencyOption {
@@ -134,6 +135,7 @@ export const ALL_CURRENCIES: CurrencyOption[] = [
 interface TopNavProps {
   onSearchClick?: () => void;
   onSelectCurrency?: (currency: CurrencyOption) => void;
+  ratesData?: ExchangeRateData;
   sidebarCollapsed: boolean;
   onToggleSidebar: () => void;
 }
@@ -141,6 +143,7 @@ interface TopNavProps {
 export const TopNav: React.FC<TopNavProps> = ({
   onSearchClick,
   onSelectCurrency,
+  ratesData,
   sidebarCollapsed,
   onToggleSidebar,
 }) => {
@@ -320,6 +323,19 @@ export const TopNav: React.FC<TopNavProps> = ({
                   )}
                 </div>
               )}
+
+              <div className="pt-2 mt-2 border-t border-white/[0.08] px-2 flex items-center justify-between text-[10px] text-[#86868b]">
+                <span>Exchange Rates</span>
+                <span>
+                  {ratesData
+                    ? ratesData.source === 'live'
+                      ? `Live (${ratesData.date})`
+                      : ratesData.source === 'cached'
+                      ? `Cached (${ratesData.date})`
+                      : `Offline Baseline (${ratesData.date})`
+                    : 'Offline Baseline (2026-11-09)'}
+                </span>
+              </div>
             </div>
           )}
         </div>

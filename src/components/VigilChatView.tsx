@@ -3,9 +3,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Subscription, 
-  AgentChatMessage, 
   AgentAction, 
-  AlternativeRecommendation 
+  AgentChatMessage, 
+  AlternativeRecommendation,
+  PriceResearchResult 
 } from '@/types';
 import { 
   Send, 
@@ -15,18 +16,20 @@ import {
   X, 
   Loader2, 
   RefreshCw, 
-  Layers, 
-  Zap, 
   ArrowUpRight,
   TrendingDown,
-  Calendar,
-  AlertCircle
+  Sparkles,
+  Search,
+  ExternalLink
 } from 'lucide-react';
+import { BASELINE_EXCHANGE_RATES, convertAmount } from '@/lib/currency';
 import { toast } from 'sonner';
 
 interface VigilChatViewProps {
   subscriptions: Subscription[];
   currencySymbol?: string;
+  currencyCode?: string;
+  rates?: Record<string, number>;
   onExecuteAction: (action: 'CANCEL' | 'SUSPEND', id: string, agreementId: string) => Promise<void>;
 }
 
@@ -43,13 +46,15 @@ function getFormattedTime(): string {
 export function VigilChatView({
   subscriptions,
   currencySymbol = '$',
+  currencyCode = 'USD',
+  rates = BASELINE_EXCHANGE_RATES,
   onExecuteAction,
 }: VigilChatViewProps) {
   const [messages, setMessages] = useState<AgentChatMessage[]>([
     {
       id: 'welcome_msg',
       role: 'assistant',
-      content: 'I have analyzed your subscription portfolio and connected PayPal agreements.\n\nReady to audit spending anomalies, identify low-utilization zombie tools, check upcoming renewal cliffs, or search Channel3 for cheaper lifetime alternatives.',
+      content: 'I have analyzed your subscription portfolio and connected PayPal agreements.\n\nReady to audit spending anomalies, research live subscription prices via Google Search, compare software plans, or find cheaper lifetime alternatives.',
       timestamp: getFormattedTime(),
     },
   ]);
@@ -62,9 +67,10 @@ export function VigilChatView({
 
   const activeSubs = subscriptions.filter((s) => s.status === 'ACTIVE');
   const monthlyTotal = activeSubs.reduce((acc, s) => {
-    if (s.billingCycle === 'YEARLY') return acc + s.amount / 12;
-    if (s.billingCycle === 'QUARTERLY') return acc + s.amount / 3;
-    return acc + s.amount;
+    const converted = convertAmount(s.amount, s.currency || 'USD', currencyCode, rates);
+    if (s.billingCycle === 'YEARLY') return acc + converted / 12;
+    if (s.billingCycle === 'QUARTERLY') return acc + converted / 3;
+    return acc + converted;
   }, 0);
   const annualTotal = monthlyTotal * 12;
 
@@ -78,23 +84,23 @@ export function VigilChatView({
     scrollToBottom();
   }, [messages, loading]);
 
-  const handleSendMessage = async (userPrompt?: string) => {
-    const textToSend = (userPrompt || input).trim();
-    if (!textToSend || loading) return;
+  const handleSendMessage = async (textToSend?: string) => {
+    const messageContent = (textToSend || input).trim();
+    if (!messageContent || loading) return;
 
     const userMessage: AgentChatMessage = {
       id: getNextMessageId('user'),
       role: 'user',
-      content: textToSend,
+      content: messageContent,
       timestamp: getFormattedTime(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    if (!userPrompt) setInput('');
+    if (!textToSend) setInput('');
     setLoading(true);
 
     try {
-      const res = await fetch('/api/agent/chat', {
+      const response = await fetch('/api/agent/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -103,20 +109,21 @@ export function VigilChatView({
             content: m.content,
           })),
           subscriptions,
+          currency: currencyCode,
         }),
       });
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Failed to reach Vigil Copilot');
+      if (!response.ok) {
+        throw new Error(`Server returned HTTP ${response.status}`);
       }
 
       const data: {
         content: string;
         actionRequired?: AgentAction;
         alternatives?: AlternativeRecommendation[];
+        priceResearchResult?: PriceResearchResult;
         toolCallHistory?: { toolName: string; input: Record<string, unknown>; summary: string }[];
-      } = await res.json();
+      } = await response.json();
 
       const assistantMessage: AgentChatMessage = {
         id: getNextMessageId('vigil'),
@@ -125,13 +132,13 @@ export function VigilChatView({
         timestamp: getFormattedTime(),
         actionRequired: data.actionRequired,
         alternatives: data.alternatives,
+        priceResearchResult: data.priceResearchResult,
         toolCallHistory: data.toolCallHistory,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Communication error';
-      toast.error(msg);
       setMessages((prev) => [
         ...prev,
         {
@@ -147,15 +154,10 @@ export function VigilChatView({
   };
 
   const handleAuthorizeAction = async (msgId: string, action: AgentAction) => {
-    if (!action.paypalAgreementId) {
-      toast.error('Missing PayPal agreement reference');
-      return;
-    }
-
     setExecutingActionId(msgId);
     try {
       const actionType = action.type === 'CONFIRM_CANCEL' ? 'CANCEL' : 'SUSPEND';
-      await onExecuteAction(actionType, action.subscriptionId || '', action.paypalAgreementId);
+      await onExecuteAction(actionType, action.subscriptionId || '', action.paypalAgreementId || '');
 
       setMessages((prev) =>
         prev.map((m) => {
@@ -164,7 +166,7 @@ export function VigilChatView({
               ...m,
               actionRequired: {
                 ...m.actionRequired,
-                status: 'EXECUTED',
+                status: 'EXECUTED' as const,
               },
             };
           }
@@ -178,7 +180,7 @@ export function VigilChatView({
           : `Paused ${action.subscriptionName} via PayPal Sandbox`
       );
     } catch {
-      toast.error('Failed to execute action on PayPal Sandbox');
+      toast.error(`Execution failed for ${action.subscriptionName}`);
     } finally {
       setExecutingActionId(null);
     }
@@ -192,7 +194,7 @@ export function VigilChatView({
             ...m,
             actionRequired: {
               ...m.actionRequired,
-              status: 'REJECTED',
+              status: 'REJECTED' as const,
             },
           };
         }
@@ -202,6 +204,12 @@ export function VigilChatView({
     toast.info('Action declined. Billing agreement left untouched.');
   };
 
+  const samplePrompts = [
+    'What are current Netflix plans in India?',
+    'Compare ChatGPT Plus vs Claude Pro pricing',
+    'Find cheaper alternatives to Spotify',
+    'Audit low usage subscriptions under 40%',
+  ];
 
   return (
     <div className="w-full space-y-6">
@@ -210,6 +218,7 @@ export function VigilChatView({
           <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-white">
             Vigil
           </h1>
+          <p className="text-xs text-[#86868b] mt-1">Autonomous Spend Guardian & Price Intelligence Copilot</p>
         </div>
 
         <div className="flex items-center gap-5 text-sm sm:text-right">
@@ -218,6 +227,14 @@ export function VigilChatView({
             <div className="text-lg font-medium text-[#f5f5f7] tabular-nums">
               {currencySymbol}{monthlyTotal.toFixed(2)}
               <span className="text-xs text-[#86868b] font-normal"> / mo</span>
+            </div>
+          </div>
+          <div className="h-8 w-px bg-white/[0.08] hidden sm:block"></div>
+          <div className="space-y-0.5 hidden lg:block">
+            <div className="text-[11px] uppercase tracking-wider text-[#86868b]">Annual Run Rate</div>
+            <div className="text-lg font-medium text-[#f5f5f7] tabular-nums">
+              {currencySymbol}{annualTotal.toFixed(2)}
+              <span className="text-xs text-[#86868b] font-normal"> / yr</span>
             </div>
           </div>
           <div className="h-8 w-px bg-white/[0.08] hidden sm:block"></div>
@@ -241,12 +258,11 @@ export function VigilChatView({
         </div>
       </div>
 
-
       <div className="w-full rounded-2xl bg-[#1c1c1e]/40 border border-white/[0.08] backdrop-blur-2xl overflow-hidden flex flex-col h-[calc(100vh-16rem)] min-h-[520px]" style={{ boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.05)' }}>
         <div className="px-5 py-3 border-b border-white/[0.08] flex items-center justify-between bg-white/[0.02]">
           <div className="flex items-center gap-2.5">
-            <div className="w-2 h-2 rounded-full bg-[#0071e3]"></div>
-            <span className="text-xs font-medium text-[#f5f5f7]">Active Telemetry Session</span>
+            <div className="w-2 h-2 rounded-full bg-[#0071e3] animate-pulse"></div>
+            <span className="text-xs font-medium text-[#f5f5f7]">Vigil Live Price Intelligence Active</span>
           </div>
 
           <button
@@ -300,51 +316,113 @@ export function VigilChatView({
                   )}
 
                   <div
-                    className={`rounded-2xl p-4 text-xs sm:text-[13px] leading-relaxed select-text ${
+                    className={`p-4 rounded-2xl text-xs sm:text-[13px] leading-relaxed select-text ${
                       isUser
-                        ? 'bg-[#0071e3] text-white rounded-br-xs'
-                        : 'bg-[#1c1c1e]/90 text-[#f5f5f7] border border-white/[0.08] rounded-bl-xs'
+                        ? 'bg-[#0071e3] text-white rounded-tr-sm ml-auto font-sans shadow-md shadow-[#0071e3]/20'
+                        : 'bg-[#1c1c1e] text-[#f5f5f7] border border-white/[0.08] rounded-tl-sm'
                     }`}
                     style={!isUser ? { boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.05)' } : undefined}
                   >
-                    <div className="whitespace-pre-wrap font-sans font-normal">
-                      {msg.content}
-                    </div>
-                    <div className={`text-[10px] mt-2 font-mono ${isUser ? 'text-white/60 text-right' : 'text-[#86868b]'}`}>
+                    <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
+                    <div className={`mt-2 text-[10px] font-mono ${isUser ? 'text-white/60 text-right' : 'text-[#86868b]'}`}>
                       {msg.timestamp}
                     </div>
                   </div>
 
-                  {msg.actionRequired && (
-                    <div className="w-full rounded-2xl bg-[#1c1c1e] border border-[#ff9f0a]/40 p-4 shadow-xl space-y-3 select-none" style={{ boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.05)' }}>
-                      <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
+                  {msg.priceResearchResult && (
+                    <div className="w-full rounded-2xl bg-[#1c1c1e] border border-white/[0.1] p-4 space-y-3 shadow-lg">
+                      <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <ShieldCheck className="w-4 h-4 text-[#ff9f0a]" />
+                          <Search className="w-4 h-4 text-[#2997ff]" />
                           <span className="text-xs font-semibold text-white">
-                            Authorization Required
+                            Verified Pricing: {msg.priceResearchResult.serviceName}
                           </span>
                         </div>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-[#ff9f0a]/10 text-[#ff9f0a] border border-[#ff9f0a]/20">
-                          {msg.actionRequired.type === 'CONFIRM_CANCEL' ? 'CANCEL AGREEMENT' : 'PAUSE AGREEMENT'}
+                        <span className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded-full border ${
+                          msg.priceResearchResult.overallStatus === 'VERIFIED'
+                            ? 'bg-[#30d158]/10 text-[#30d158] border-[#30d158]/20'
+                            : msg.priceResearchResult.overallStatus === 'CROSS_CHECKED'
+                            ? 'bg-[#2997ff]/10 text-[#2997ff] border-[#2997ff]/20'
+                            : 'bg-[#ff9f0a]/10 text-[#ff9f0a] border-[#ff9f0a]/20'
+                        }`}>
+                          {msg.priceResearchResult.overallStatus.replace('_', ' ')}
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 text-xs">
+                      {msg.priceResearchResult.sourceUrl && (
+                        <div className="text-[11px] text-[#86868b] flex items-center gap-1.5">
+                          <span>Source:</span>
+                          <a
+                            href={msg.priceResearchResult.sourceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#2997ff] hover:underline flex items-center gap-0.5"
+                          >
+                            <span>{msg.priceResearchResult.sourceTitle || msg.priceResearchResult.sourceUrl}</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        {msg.priceResearchResult.plans.map((p, idx) => (
+                          <div key={idx} className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06] space-y-1">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="font-semibold text-white">{p.name}</span>
+                              <span className="font-mono text-white tabular-nums">
+                                {msg.priceResearchResult?.currency} {p.amount}/{p.cycle === 'YEARLY' ? 'yr' : 'mo'}
+                              </span>
+                            </div>
+                            {p.features && (
+                              <p className="text-[11px] text-[#86868b] line-clamp-2">{p.features}</p>
+                            )}
+                            <div className="flex gap-1.5 pt-1 flex-wrap">
+                              {p.isStudentDiscount && (
+                                <span className="text-[9px] font-mono text-[#2997ff] bg-[#0071e3]/10 px-1.5 py-0.5 rounded">Student Rate</span>
+                              )}
+                              {p.isIntroductory && (
+                                <span className="text-[9px] font-mono text-[#ff9f0a] bg-[#ff9f0a]/10 px-1.5 py-0.5 rounded">Introductory Offer</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {msg.actionRequired && (
+                    <div className="w-full rounded-2xl bg-[#1c1c1e] border border-white/[0.1] p-4 space-y-3 shadow-xl">
+                      <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 rounded-lg bg-[#0071e3]/20 text-[#2997ff]">
+                            <ShieldCheck className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-semibold text-white">
+                              {msg.actionRequired.type === 'CONFIRM_CANCEL' ? 'Subscription Cancellation' : 'Subscription Suspension'}
+                            </h4>
+                            <p className="text-[11px] text-[#86868b]">PayPal Sandbox Human-in-the-Loop Gateway</p>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-mono uppercase tracking-wider text-[#2997ff] bg-[#0071e3]/10 px-2 py-0.5 rounded border border-[#0071e3]/20">
+                          Pending Approval
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs font-mono bg-black/40 p-3 rounded-xl border border-white/[0.04]">
                         <div>
-                          <span className="text-[#86868b] block text-[10px] font-mono uppercase">Subscription</span>
-                          <span className="font-medium text-white">{msg.actionRequired.subscriptionName}</span>
+                          <span className="text-[#86868b] block text-[10px] uppercase">Service</span>
+                          <span className="text-white font-sans font-medium">{msg.actionRequired.subscriptionName}</span>
                         </div>
                         <div>
-                          <span className="text-[#86868b] block text-[10px] font-mono uppercase">Monthly Charge</span>
-                          <span className="font-mono font-medium text-white tabular-nums">
-                            {currencySymbol}{msg.actionRequired.amount.toFixed(2)}/mo
+                          <span className="text-[#86868b] block text-[10px] uppercase">Outflow</span>
+                          <span className="text-white font-mono tabular-nums">
+                            {currencySymbol}{convertAmount(msg.actionRequired.amount, msg.actionRequired.currency || 'USD', currencyCode, rates).toFixed(2)}
                           </span>
                         </div>
-                        <div className="col-span-2">
-                          <span className="text-[#86868b] block text-[10px] font-mono uppercase">PayPal Agreement ID</span>
-                          <span className="font-mono text-white text-[11px] bg-black/60 px-2 py-0.5 rounded border border-white/[0.08] inline-block">
-                            {msg.actionRequired.paypalAgreementId}
-                          </span>
+                        <div className="col-span-2 pt-1 border-t border-white/[0.04]">
+                          <span className="text-[#86868b] block text-[10px] uppercase">PayPal Agreement ID</span>
+                          <span className="text-[#2997ff] break-all">{msg.actionRequired.paypalAgreementId || 'N/A'}</span>
                         </div>
                         {msg.actionRequired.reason && (
                           <div className="col-span-2 text-[11px] text-[#86868b]">
@@ -462,12 +540,28 @@ export function VigilChatView({
               </div>
               <div className="flex items-center gap-2 p-3 rounded-2xl bg-[#1c1c1e]/80 border border-white/[0.08]">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-[#0071e3]" />
-                <span>Auditing subscription portfolio...</span>
+                <span>Vigil is researching live prices & auditing agreements...</span>
               </div>
             </div>
           )}
 
           <div ref={messagesEndRef} />
+        </div>
+
+        {/* Quick Prompts */}
+        <div className="px-4 py-2 border-t border-white/[0.06] bg-black/20 flex gap-2 overflow-x-auto no-scrollbar">
+          {samplePrompts.map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => handleSendMessage(p)}
+              disabled={loading}
+              className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-[11px] text-[#86868b] hover:text-white shrink-0 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <Sparkles className="w-3 h-3 text-[#2997ff]" />
+              <span>{p}</span>
+            </button>
+          ))}
         </div>
 
         <div className="p-4 border-t border-white/[0.08] bg-black/40">
@@ -483,14 +577,14 @@ export function VigilChatView({
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask Vigil to audit spend, find alternatives, or cancel subscriptions..."
+              placeholder="Ask Vigil to research plans in any country, compare tools, or audit spend..."
               disabled={loading}
               className="flex-1 bg-[#1c1c1e]/80 border border-white/[0.1] rounded-xl px-4 py-3 text-xs sm:text-[13px] text-white placeholder-[#86868b] focus:outline-none focus:border-[#0071e3] transition-colors"
             />
             <button
               type="submit"
               disabled={!input.trim() || loading}
-              className="p-3 rounded-xl bg-[#0071e3] hover:bg-[#0077ed] text-white transition-all active:scale-[0.96] disabled:opacity-40 disabled:cursor-not-allowed font-medium shadow-md shadow-[#0071e3]/20"
+              className="p-3 rounded-xl bg-[#0071e3] hover:bg-[#0077ed] text-white transition-all active:scale-[0.96] disabled:opacity-40 disabled:cursor-not-allowed font-medium shadow-md shadow-[#0071e3]/20 cursor-pointer"
               title="Send message"
             >
               <Send className="w-4 h-4" />

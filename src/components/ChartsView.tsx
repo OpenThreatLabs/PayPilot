@@ -8,9 +8,10 @@ import { SpendAnalytics } from '@/types';
 
 interface ChartsViewProps {
   analytics: SpendAnalytics;
+  currencySymbol?: string;
 }
 
-export const ChartsView: React.FC<ChartsViewProps> = ({ analytics }) => {
+export const ChartsView: React.FC<ChartsViewProps> = ({ analytics, currencySymbol = '$' }) => {
   return (
     <div className="bg-[#111215] border border-[#23252a] rounded-lg p-5">
       <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#23252a]">
@@ -19,7 +20,7 @@ export const ChartsView: React.FC<ChartsViewProps> = ({ analytics }) => {
           <p className="text-xs text-[#8c9099]">Scheduled renewal cliffs across active billing agreements</p>
         </div>
         <div className="text-xs font-mono text-[#8c9099]">
-          Peak Outflow: <span className="text-white font-semibold">${analytics.monthlyTotal.toFixed(2)}</span>
+          Peak Outflow: <span className="text-white font-semibold">{currencySymbol}{analytics.monthlyTotal.toFixed(2)}</span>
         </div>
       </div>
 
@@ -33,7 +34,7 @@ export const ChartsView: React.FC<ChartsViewProps> = ({ analytics }) => {
               </linearGradient>
             </defs>
             <XAxis dataKey="date" stroke="#5e626b" fontSize={11} tickLine={false} />
-            <YAxis stroke="#5e626b" fontSize={11} tickFormatter={(v) => `$${v}`} />
+            <YAxis stroke="#5e626b" fontSize={11} tickFormatter={(v) => `${currencySymbol}${v}`} />
             <Tooltip 
               contentStyle={{ 
                 backgroundColor: '#111215', 

@@ -2,9 +2,20 @@
 
 import React, { useState } from 'react';
 import { Channel3Product } from '@/lib/channel3';
-import { Sparkles, ExternalLink, Search, Loader2, ArrowUpRight, TrendingDown } from 'lucide-react';
+import { BASELINE_EXCHANGE_RATES, convertAmount } from '@/lib/currency';
+import { Sparkles, Search, Loader2, ArrowUpRight, TrendingDown } from 'lucide-react';
 
-export const Channel3Deals: React.FC = () => {
+interface Channel3DealsProps {
+  currencySymbol?: string;
+  currencyCode?: string;
+  rates?: Record<string, number>;
+}
+
+export const Channel3Deals: React.FC<Channel3DealsProps> = ({
+  currencySymbol = '$',
+  currencyCode = 'USD',
+  rates = BASELINE_EXCHANGE_RATES,
+}) => {
   const [query, setQuery] = useState('design');
   const [products, setProducts] = useState<Channel3Product[]>([
     {
@@ -132,7 +143,7 @@ export const Channel3Deals: React.FC = () => {
                 {p.savingVersusRecurringYearly && (
                   <span className="text-xs font-mono font-medium text-[#30d158] flex items-center gap-1">
                     <TrendingDown className="w-3.5 h-3.5" />
-                    Save ~${p.savingVersusRecurringYearly}/yr
+                    Save ~{currencySymbol}{convertAmount(p.savingVersusRecurringYearly, p.currency || 'USD', currencyCode, rates).toFixed(0)}/yr
                   </span>
                 )}
               </div>
@@ -152,7 +163,7 @@ export const Channel3Deals: React.FC = () => {
             <div className="mt-5 pt-4 border-t border-white/[0.08] flex items-center justify-between">
               <div>
                 <span className="text-base font-semibold font-mono text-white tabular-nums">
-                  ${p.price.toFixed(2)}
+                  {currencySymbol}{convertAmount(p.price, p.currency || 'USD', currencyCode, rates).toFixed(2)}
                 </span>
                 <span className="text-[10px] font-mono text-[#a855f7] ml-1.5 uppercase">
                   {p.recurringOrLifetime ? p.recurringOrLifetime.toLowerCase() : 'one-time'}

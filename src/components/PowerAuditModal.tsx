@@ -11,6 +11,7 @@ import {
   colorSchemeDark
 } from 'ag-grid-community';
 import { Subscription } from '@/types';
+import { BASELINE_EXCHANGE_RATES, convertAmount } from '@/lib/currency';
 import { X, Download, Search, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -21,6 +22,8 @@ interface PowerAuditModalProps {
   onClose: () => void;
   subscriptions: Subscription[];
   currencySymbol?: string;
+  currencyCode?: string;
+  rates?: Record<string, number>;
 }
 
 export function PowerAuditModal({
@@ -28,6 +31,8 @@ export function PowerAuditModal({
   onClose,
   subscriptions,
   currencySymbol = '$',
+  currencyCode = 'USD',
+  rates = BASELINE_EXCHANGE_RATES,
 }: PowerAuditModalProps) {
   const [quickFilterText, setQuickFilterText] = useState('');
 
@@ -86,9 +91,16 @@ export function PowerAuditModal({
       minWidth: 90,
       cellRenderer: (params: ICellRendererParams<Subscription>) => {
         if (!params.data) return null;
+        const sub = params.data;
+        const converted = convertAmount(sub.amount, sub.currency || 'USD', currencyCode, rates);
         return (
-          <div className="flex items-center h-full font-mono text-xs font-medium text-white tabular-nums">
-            {currencySymbol}{params.data.amount.toFixed(2)}
+          <div className="flex flex-col justify-center h-full font-mono text-xs font-medium text-white tabular-nums">
+            <span>{currencySymbol}{converted.toFixed(2)}</span>
+            {sub.currency && sub.currency.toUpperCase() !== currencyCode.toUpperCase() && (
+              <span className="text-[10px] text-[#86868b] font-sans font-normal">
+                Orig. {sub.amount.toFixed(2)} {sub.currency}
+              </span>
+            )}
           </div>
         );
       },
@@ -167,7 +179,7 @@ export function PowerAuditModal({
         );
       },
     },
-  ], [currencySymbol]);
+  ], [currencySymbol, currencyCode, rates]);
 
   const defaultColDef = useMemo<ColDef>(() => ({
     sortable: true,
