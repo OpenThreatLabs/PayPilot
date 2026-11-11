@@ -12,6 +12,8 @@ import { ProfileModal } from '@/components/ProfileModal';
 import { UserProfile, getStoredUserProfile, clearStoredUserProfile, getUserVaultStorageKey } from '@/lib/userProfile';
 import { VigilChatView } from '@/components/VigilChatView';
 import { Channel3Deals } from '@/components/Channel3Deals';
+import { ChartsView } from '@/components/ChartsView';
+import { calculateSpendAnalytics } from '@/lib/analytics';
 import { INITIAL_SUBSCRIPTIONS } from '@/lib/initialData';
 import { Subscription } from '@/types';
 import { ExchangeRateData, DEFAULT_EXCHANGE_DATA, fetchExchangeRates } from '@/lib/currency';
@@ -55,7 +57,12 @@ export default function Home() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileModalTab, setProfileModalTab] = useState<'PROFILE' | 'PAYPAL' | 'DATA'>('PROFILE');
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(() => {
+    if (typeof window !== 'undefined') {
+      return getStoredUserProfile();
+    }
+    return null;
+  });
   const [subscriptionFilter, setSubscriptionFilter] = useState<SubscriptionFilterType>('ALL');
 
   // Initialize state from localStorage lazily, applying any URL approval updates on mount
@@ -121,9 +128,6 @@ export default function Home() {
     }
 
     let mounted = true;
-    const stored = getStoredUserProfile();
-    if (stored) setUserProfile(stored);
-
     fetchExchangeRates().then((data) => {
       if (mounted) setRatesData(data);
     });
@@ -339,7 +343,7 @@ export default function Home() {
         <main className="flex-1 p-6 sm:p-10 transition-all flex flex-col items-center">
           <div className="w-full max-w-6xl">
             {activeTab === 'DASHBOARD' && (
-              <div>
+              <div className="space-y-8">
                 <SpendHeader
                   subscriptions={subscriptions}
                   currencySymbol={currency.symbol}
@@ -356,6 +360,10 @@ export default function Home() {
                     setSubscriptionFilter(type);
                     setActiveTab('SUBSCRIPTIONS');
                   }}
+                />
+                <ChartsView
+                  analytics={calculateSpendAnalytics(subscriptions, currency.code, ratesData.rates, currency.symbol)}
+                  currencySymbol={currency.symbol}
                 />
               </div>
             )}

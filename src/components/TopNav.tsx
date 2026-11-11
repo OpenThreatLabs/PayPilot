@@ -1,16 +1,12 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import Link from 'next/link';
 import { 
   Search, 
-  Bell, 
   ChevronDown, 
   Check, 
   User, 
   CreditCard, 
-  ShieldCheck, 
-  Settings, 
   LogOut,
   Database,
   PanelLeftClose,
@@ -148,7 +144,6 @@ interface TopNavProps {
 }
 
 export const TopNav: React.FC<TopNavProps> = ({
-  onSearchClick,
   currency,
   onSelectCurrency,
   ratesData,
@@ -160,21 +155,13 @@ export const TopNav: React.FC<TopNavProps> = ({
   onNavigateTab,
   onSignOut,
 }) => {
-  const [selectedCurrency, setSelectedCurrency] = useState<CurrencyOption>(currency || POPULAR_CURRENCIES[0]);
-
-  useEffect(() => {
-    if (currency) {
-      setSelectedCurrency(currency);
-    }
-  }, [currency]);
+  const selectedCurrency = currency || POPULAR_CURRENCIES[0];
 
   const [isCurrencyOpen, setIsCurrencyOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   const currencyRef = useRef<HTMLDivElement>(null);
-  const notificationsRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -182,9 +169,7 @@ export const TopNav: React.FC<TopNavProps> = ({
     const handleClickOutside = (event: MouseEvent) => {
       if (currencyRef.current && !currencyRef.current.contains(event.target as Node)) {
         setIsCurrencyOpen(false);
-      }
-      if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
-        setIsNotificationsOpen(false);
+        setSearchQuery('');
       }
       if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
         setIsProfileOpen(false);
@@ -199,11 +184,10 @@ export const TopNav: React.FC<TopNavProps> = ({
 
   useEffect(() => {
     if (isCurrencyOpen) {
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         searchInputRef.current?.focus();
       }, 50);
-    } else {
-      setSearchQuery('');
+      return () => clearTimeout(timer);
     }
   }, [isCurrencyOpen]);
 
@@ -220,8 +204,8 @@ export const TopNav: React.FC<TopNavProps> = ({
   }, [searchQuery]);
 
   const handleSelect = (curr: CurrencyOption) => {
-    setSelectedCurrency(curr);
     setIsCurrencyOpen(false);
+    setSearchQuery('');
     onSelectCurrency?.(curr);
     toast.success(`Currency changed to ${curr.code} (${curr.symbol})`);
   };
@@ -368,32 +352,41 @@ export const TopNav: React.FC<TopNavProps> = ({
               )}
 
               <div className="space-y-0.5">
-                <Link
-                  href="/profile?tab=profile"
-                  onClick={() => setIsProfileOpen(false)}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsProfileOpen(false);
+                    onOpenProfile?.('PROFILE');
+                  }}
                   className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-[#f5f5f7] hover:text-white hover:bg-white/[0.08] transition-all cursor-pointer text-left active:scale-[0.98]"
                 >
                   <User className="w-4 h-4 text-[#2997ff]" />
                   <span className="font-medium">Profile</span>
-                </Link>
+                </button>
 
-                <Link
-                  href="/profile?tab=paypal"
-                  onClick={() => setIsProfileOpen(false)}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsProfileOpen(false);
+                    onOpenProfile?.('PAYPAL');
+                  }}
                   className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-[#f5f5f7] hover:text-white hover:bg-white/[0.08] transition-all cursor-pointer text-left active:scale-[0.98]"
                 >
                   <CreditCard className="w-4 h-4 text-[#0071e3]" />
                   <span className="font-medium">PayPal</span>
-                </Link>
+                </button>
 
-                <Link
-                  href="/profile?tab=data"
-                  onClick={() => setIsProfileOpen(false)}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsProfileOpen(false);
+                    onOpenProfile?.('DATA');
+                  }}
                   className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-[#f5f5f7] hover:text-white hover:bg-white/[0.08] transition-all cursor-pointer text-left active:scale-[0.98]"
                 >
                   <Database className="w-4 h-4 text-[#30d158]" />
                   <span className="font-medium">Data</span>
-                </Link>
+                </button>
               </div>
 
               {profile && onSignOut && (

@@ -16,8 +16,7 @@ import {
   CreditCard,
   Zap,
   Lock,
-  ShieldCheck,
-  Sparkles
+  ShieldCheck
 } from 'lucide-react';
 import { UserProfile, saveStoredUserProfile, clearStoredUserProfile } from '@/lib/userProfile';
 import { exportPayPilotVault, parsePayPilotVaultBackup } from '@/lib/vaultData';

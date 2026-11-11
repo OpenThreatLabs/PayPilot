@@ -4,15 +4,13 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Bell, 
   Check, 
-  Trash2, 
   TrendingUp, 
   Clock, 
   ShieldAlert, 
   Sparkles, 
   CreditCard,
   ArrowRight,
-  X,
-  ExternalLink
+  X
 } from 'lucide-react';
 import { Subscription } from '@/types';
 import { 

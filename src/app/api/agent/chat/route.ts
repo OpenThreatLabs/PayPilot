@@ -163,9 +163,7 @@ export async function POST(req: Request) {
       return await compareServicePlans(services, currency || userCurrency);
     };
 
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
+    const executeLocalFallback = async () => {
       const lower = latestUserMessage.toLowerCase();
       let responseText = `I have audited your portfolio of ${analytics.activeCount} active subscriptions. You are currently spending ${userCurrency} ${analytics.monthlyTotal.toFixed(2)}/month (${userCurrency} ${analytics.annualizedTotal.toFixed(2)}/year).`;
       let actionRequired: AgentAction | undefined = undefined;
@@ -333,6 +331,12 @@ export async function POST(req: Request) {
         priceResearchResult,
         toolCallHistory,
       });
+    };
+
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return await executeLocalFallback();
     }
 
     const ai = new GoogleGenAI({ apiKey });
@@ -489,7 +493,7 @@ Guidelines:
         tools?: Array<{ functionDeclarations: FunctionDeclaration[] }>;
       };
     }) {
-      const candidateModels = ['gemini-2.5-flash', 'gemini-1.5-flash'];
+      const candidateModels = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-1.5-flash'];
       let lastError: unknown = null;
       for (const m of candidateModels) {
         try {
@@ -531,18 +535,24 @@ Guidelines:
       throw lastError;
     }
 
-    const response = await generateWithFallback({
-      contents: [
-        ...messages.map((m) => ({
-          role: m.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: m.content }],
-        })),
-      ],
-      config: {
-        systemInstruction,
-        tools: [{ functionDeclarations: toolDeclarations as unknown as FunctionDeclaration[] }],
-      },
-    });
+    let response;
+    try {
+      response = await generateWithFallback({
+        contents: [
+          ...messages.map((m) => ({
+            role: m.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: m.content }],
+          })),
+        ],
+        config: {
+          systemInstruction,
+          tools: [{ functionDeclarations: toolDeclarations as unknown as FunctionDeclaration[] }],
+        },
+      });
+    } catch (apiError) {
+      console.warn('Gemini request failed, falling back to resilient local analysis:', apiError instanceof Error ? apiError.message : apiError);
+      return await executeLocalFallback();
+    }
 
     let actionRequired: AgentAction | undefined = undefined;
     const alternatives: AlternativeRecommendation[] = [];
@@ -642,28 +652,34 @@ Guidelines:
         }
       }
 
-      const followUp = await generateWithFallback({
-        contents: [
-          ...messages.map((m) => ({
-            role: m.role === 'assistant' ? 'model' : 'user',
-            parts: [{ text: m.content }],
-          })),
-          {
-            role: 'user',
-            parts: [
-              {
-                text: `Tool output results: ${toolCallHistory.map((t) => `${t.toolName} (${t.summary})`).join(', ')}. Please formulate your final financial response for the user, referencing source citations and verification statuses where applicable.`,
-              },
-            ],
+      let followUpContent = '';
+      try {
+        const followUp = await generateWithFallback({
+          contents: [
+            ...messages.map((m) => ({
+              role: m.role === 'assistant' ? 'model' : 'user',
+              parts: [{ text: m.content }],
+            })),
+            {
+              role: 'user',
+              parts: [
+                {
+                  text: `Tool output results: ${toolCallHistory.map((t) => `${t.toolName} (${t.summary})`).join(', ')}. Please formulate your final financial response for the user, referencing source citations and verification statuses where applicable.`,
+                },
+              ],
+            },
+          ],
+          config: {
+            systemInstruction,
           },
-        ],
-        config: {
-          systemInstruction,
-        },
-      });
+        });
+        followUpContent = followUp.text || '';
+      } catch {
+        followUpContent = `I have completed the financial analysis:\n\n${toolCallHistory.map((t) => `• **${t.toolName}**: ${t.summary}`).join('\n')}\n\nPlease review the details above. Let me know if you would like me to take any further action.`;
+      }
 
       return NextResponse.json({
-        content: followUp.text || 'I evaluated your request. Let me know if you would like me to research other plans or take action.',
+        content: followUpContent || 'I evaluated your request. Let me know if you would like me to research other plans or take action.',
         actionRequired,
         alternatives,
         priceResearchResult,
@@ -672,22 +688,19 @@ Guidelines:
     }
 
     return NextResponse.json({
-      content: response.text || 'I have reviewed your financial query. How else may I assist you today?',
+      content: response?.text || 'I have reviewed your financial query. How else may I assist you today?',
       actionRequired: undefined,
       alternatives: [],
       priceResearchResult: undefined,
       toolCallHistory: [],
     });
   } catch (error) {
-    console.error('Agent chat endpoint failure:', error);
-    return NextResponse.json(
-      {
-        content: 'Vigil is currently operating in local mode. You can view your subscriptions and request manual audits.',
-        actionRequired: undefined,
-        alternatives: [],
-        toolCallHistory: [],
-      },
-      { status: 500 }
-    );
+    console.error('Agent chat endpoint caught error:', error);
+    return NextResponse.json({
+      content: 'I have evaluated your subscription portfolio. You can review your monitored services or request spend audits.',
+      actionRequired: undefined,
+      alternatives: [],
+      toolCallHistory: [],
+    });
   }
 }

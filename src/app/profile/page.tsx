@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, Suspense } from 'react';
+import React, { useState, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { 
@@ -14,11 +14,9 @@ import {
   Download, 
   Upload, 
   ShieldCheck, 
-  Smartphone,
   Save,
   Zap,
-  Lock,
-  ChevronRight
+  Lock
 } from 'lucide-react';
 import { 
   UserProfile, 
@@ -44,60 +42,86 @@ function ProfilePageContent() {
     ? initialTabParam 
     : 'ALL';
 
+  const [prevParam, setPrevParam] = useState(initialTabParam);
   const [activeTab, setActiveTab] = useState<ProfileSettingsTab>(validTab);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
-  const [currencyCode, setCurrencyCode] = useState<string>('USD');
+
+  if (prevParam !== initialTabParam) {
+    setPrevParam(initialTabParam);
+    if (validTab !== activeTab) {
+      setActiveTab(validTab);
+    }
+  }
+
+  const [profile, setProfile] = useState<UserProfile | null>(() => {
+    if (typeof window !== 'undefined') {
+      return getStoredUserProfile();
+    }
+    return null;
+  });
+
+  const [fullName, setFullName] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return getStoredUserProfile()?.name || '';
+    }
+    return '';
+  });
+
+  const [email, setEmail] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return getStoredUserProfile()?.email || '';
+    }
+    return '';
+  });
+
+  const [paypalMode, setPaypalMode] = useState<'DEFAULT' | 'CUSTOM'>(() => {
+    if (typeof window !== 'undefined') {
+      const p = getStoredUserProfile();
+      if (p?.paypalMerchantId && p.paypalMerchantId !== 'sandbox-payer-default') return 'CUSTOM';
+    }
+    return 'DEFAULT';
+  });
+
+  const [customPaypalId, setCustomPaypalId] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const p = getStoredUserProfile();
+      if (p?.paypalMerchantId && p.paypalMerchantId !== 'sandbox-payer-default') return p.paypalMerchantId;
+    }
+    return '';
+  });
+
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const loadedProfile = getStoredUserProfile();
+        const activeKey = getUserVaultStorageKey(loadedProfile);
+        const rawSubs = localStorage.getItem(activeKey) || localStorage.getItem(SUBS_STORAGE_KEY);
+        if (rawSubs) {
+          return JSON.parse(rawSubs);
+        }
+      } catch {
+        // Fallback
+      }
+    }
+    return INITIAL_SUBSCRIPTIONS;
+  });
+
+  const [currencyCode] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const rawCurr = localStorage.getItem(CURRENCY_STORAGE_KEY);
+        if (rawCurr) {
+          const parsed = JSON.parse(rawCurr);
+          if (parsed?.code) return parsed.code;
+        }
+      } catch {
+        // Fallback
+      }
+    }
+    return 'USD';
+  });
+
   const [isEditing, setIsEditing] = useState(false);
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [paypalMode, setPaypalMode] = useState<'DEFAULT' | 'CUSTOM'>('DEFAULT');
-  const [customPaypalId, setCustomPaypalId] = useState('');
-
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const tabParam = searchParams.get('tab')?.toUpperCase();
-    if (tabParam === 'PROFILE' || tabParam === 'PAYPAL' || tabParam === 'DATA') {
-      setActiveTab(tabParam);
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
-    const loadedProfile = getStoredUserProfile();
-    if (loadedProfile) {
-      setProfile(loadedProfile);
-      setFullName(loadedProfile.name);
-      setEmail(loadedProfile.email);
-      if (loadedProfile.paypalMerchantId && loadedProfile.paypalMerchantId !== 'sandbox-payer-default') {
-        setPaypalMode('CUSTOM');
-        setCustomPaypalId(loadedProfile.paypalMerchantId);
-      } else {
-        setPaypalMode('DEFAULT');
-        setCustomPaypalId('');
-      }
-    }
-
-    try {
-      const activeKey = getUserVaultStorageKey(loadedProfile);
-      const rawSubs = localStorage.getItem(activeKey) || localStorage.getItem(SUBS_STORAGE_KEY);
-      if (rawSubs) {
-        setSubscriptions(JSON.parse(rawSubs));
-      } else {
-        setSubscriptions(INITIAL_SUBSCRIPTIONS);
-      }
-    } catch {
-      setSubscriptions(INITIAL_SUBSCRIPTIONS);
-    }
-
-    try {
-      const rawCurr = localStorage.getItem(CURRENCY_STORAGE_KEY);
-      if (rawCurr) {
-        const parsed = JSON.parse(rawCurr);
-        if (parsed?.code) setCurrencyCode(parsed.code);
-      }
-    } catch {}
-  }, []);
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();

@@ -557,7 +557,7 @@ Format your output strictly as valid JSON without markdown wrapping:
 }`;
 
   const ai = new GoogleGenAI({ apiKey });
-  const candidateModels = ['gemini-2.5-flash', 'gemini-1.5-flash'];
+  const candidateModels = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-1.5-flash'];
   let rawText = '';
   let citations: GroundingCitation[] = [];
 

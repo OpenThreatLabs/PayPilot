@@ -87,7 +87,7 @@ export async function createPayPalSubscription(
 ): Promise<CreateSubscriptionResult> {
   const token = await getPayPalAccessToken();
   let currency = (params.currency || 'USD').toUpperCase();
-  let amountStr = params.amount.toFixed(2);
+  const amountStr = params.amount.toFixed(2);
 
   if (!PAYPAL_SUPPORTED_BILLING_CURRENCIES.has(currency)) {
     currency = 'USD';
@@ -275,7 +275,7 @@ export async function getPayPalSubscriptionDetails(subscriptionId: string) {
 
   const data = await response.json();
 
-  let planDetails: Record<string, any> | null = null;
+  let planDetails: Record<string, unknown> | null = null;
   let productName: string | null = null;
   if (data.plan_id) {
     try {
